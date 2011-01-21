@@ -899,7 +899,7 @@ db_attachment_req(#httpd{method='GET',mochi_req=MochiReq}=Req, Db, DocId, FileNa
     case [A || A <- Atts, A#att.name == FileName] of
     [] ->
         throw({not_found, "Document is missing attachment"});
-    [#att{type=Type, encoding=Enc, disk_len=DiskLen, att_len=AttLen}=Att] ->
+    [#att{type=Type, encoding=Enc, disk_len=DiskLen, att_len=AttLen, location=Location}=Att] ->
         Etag = couch_httpd:doc_etag(Doc),
         ReqAcceptsAttEnc = lists:member(
            atom_to_list(Enc),
@@ -939,11 +939,13 @@ db_attachment_req(#httpd{method='GET',mochi_req=MochiReq}=Req, Db, DocId, FileNa
             _ ->
                 [{"Accept-Ranges", "none"}]
         end,
-        AttFun = case ReqAcceptsAttEnc of
-        false ->
+        AttFun = case {Location, ReqAcceptsAttEnc} of
+        {internal, false} ->
             fun couch_doc:att_foldl_decode/3;
-        true ->
-            fun couch_doc:att_foldl/3
+        {internal, true} ->
+            fun couch_doc:att_foldl/3;
+        {{external, _}, _} ->
+            fun couch_external_attachment:att_foldl/3
         end,
         couch_httpd:etag_respond(
             Req,
