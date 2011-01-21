@@ -1170,7 +1170,17 @@ make_doc(#db{updater_fd = Fd} = Db, Id, Deleted, Bp, RevisionPath) ->
         {ok, {BodyData0, Atts0}} = read_doc(Db, Bp),
         {BodyData0,
             lists:map(
-                fun({Name,Type,Sp,AttLen,DiskLen,RevPos,Md5,Enc}) ->
+                fun({Name,Type,Sp,AttLen,DiskLen,RevPos,Md5,Enc,Location}) ->
+                    #att{name=Name,
+                        type=Type,
+                        att_len=AttLen,
+                        disk_len=DiskLen,
+                        md5=Md5,
+                        revpos=RevPos,
+                        data={Fd,Sp},
+                        encoding=Enc,
+                        location=Location};
+                ({Name,Type,Sp,AttLen,DiskLen,RevPos,Md5,Enc}) ->
                     #att{name=Name,
                         type=Type,
                         att_len=AttLen,

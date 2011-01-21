@@ -464,9 +464,9 @@ flush_trees(#db{updater_fd = Fd} = Db,
                 case Atts of
                 [] -> [];
                 [#att{data={BinFd, _Sp}} | _ ] when BinFd == Fd ->
-                    [{N,T,P,AL,DL,R,M,E}
+                    [{N,T,P,AL,DL,R,M,E,LO}
                         || #att{name=N,type=T,data={_,P},md5=M,revpos=R,
-                               att_len=AL,disk_len=DL,encoding=E}
+                               att_len=AL,disk_len=DL,encoding=E,location=LO}
                         <- Atts];
                 _ ->
                     % BinFd must not equal our Fd. This can happen when a database
@@ -735,6 +735,13 @@ copy_doc_attachments(#db{updater_fd = SrcFd} = SrcDb, SrcSp, DestFd) ->
             {NewBinSp, AttLen, AttLen, Md5, _IdentityMd5} =
                 couch_stream:copy_to_new_stream(SrcFd, BinSp, DestFd),
             {Name, Type, NewBinSp, AttLen, AttLen, RevPos, Md5, identity};
+        ({Name, Type, BinSp, AttLen, DiskLen, RevPos, Md5, Enc, internal}) ->
+            {NewBinSp, AttLen, _, Md5, _IdentityMd5} =
+                couch_stream:copy_to_new_stream(SrcFd, BinSp, DestFd),
+            {Name, Type, NewBinSp, AttLen, DiskLen, RevPos, Md5, Enc};
+        ({Name, Type, BinSp, AttLen, DiskLen, RevPos, Md5, Enc, {external, _}=Location}) ->
+            %% attachment stored in external file, no need to copy.
+            {Name, Type, BinSp, AttLen, DiskLen, RevPos, Md5, Enc, Location};
         ({Name, Type, BinSp, AttLen, DiskLen, RevPos, Md5, Enc1}) ->
             {NewBinSp, AttLen, _, Md5, _IdentityMd5} =
                 couch_stream:copy_to_new_stream(SrcFd, BinSp, DestFd),

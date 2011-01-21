@@ -117,10 +117,11 @@
     md5= <<>>,
     revpos=0,
     data,
-    encoding=identity % currently supported values are:
-                      %     identity, gzip
-                      % additional values to support in the future:
-                      %     deflate, compress
+    encoding=identity, % currently supported values are:
+                       %     identity, gzip
+                       % additional values to support in the future:
+                       %     deflate, compress
+    location=internal
     }).
 
 
