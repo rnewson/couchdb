@@ -21,22 +21,23 @@
 -export([init/1, terminate/2, code_change/3]).
 -export([handle_cast/2, handle_call/3, handle_info/2]).
 
--record(ext_stream, {fd=nil, len=0, md5}).
+-include("couch_db.hrl").
+-record(ext_stream, {path, fd=nil, len=0, md5}).
 -define(BUFFER_SIZE, 16384).
 
 %%% Interface functions %%%
 
-open(Name) ->
-    gen_server:start_link(?MODULE, Name, []).
+open(Path) ->
+    gen_server:start_link(?MODULE, Path, []).
 
-write(Pid, Bin) when is_binary(Bin) ->
-    gen_server:call(Pid, {write, Bin}, infinity).
+write(Stream, Bin) when is_binary(Bin) ->
+    gen_server:call(Stream, {write, Bin}, infinity).
 
-sync(Pid) ->
-    gen_server:call(Pid, sync, infinity).
+sync(Stream) ->
+    gen_server:call(Stream, sync, infinity).
 
-close(Pid) ->
-    gen_server:call(Pid, close, infinity).
+close(Stream) ->
+    gen_server:call(Stream, close, infinity).
 
 att_foldl(#att{location={external, Location},md5=Md5}, Fun, Acc) ->
     {ok, Fd} = file:open(resolve_location(Location), [read, raw, binary]),
@@ -60,10 +61,11 @@ resolve_location(Location) ->
 
 %% gen_server callbacks.
 
-init(Name) ->
-    case file:open(Name, [raw, binary, write, append, exclusive]) of
+init(Path) ->
+    case file:open(Path, [raw, binary, write, append, exclusive]) of
         {ok, Fd} ->
             {ok, #ext_stream{
+                path=Path,
                 fd=Fd,
                 md5=couch_util:md5_init()
                 }
@@ -90,14 +92,9 @@ handle_call({write, Bin}, _From, #ext_stream{len=Len, md5=Md5, fd=Fd}=Stream) ->
             {reply, Error, Stream}
     end;
 handle_call(close, _From, #ext_stream{len=Len,md5=Md5,fd=Fd}=Stream) ->
-    {Reason, Reply} = case file:close(Fd) of
-        ok ->
-            FinalMd5 = couch_util:md5_final(Md5),
-            {normal, {[], Len, Len, FinalMd5, FinalMd5}};
-        Error ->
-            {error, Error}
-    end,
-    {stop, Reason, Reply, Stream#ext_stream{fd=nil}}.
+    ok = file:close(Fd),
+    FinalMd5 = couch_util:md5_final(Md5),
+    {stop, normal, {Len, FinalMd5}, Stream#ext_stream{fd=nil}}.
 
 handle_cast(_Msg, State) ->
     {noreply,State}.

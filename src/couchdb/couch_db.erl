@@ -815,28 +815,38 @@ set_new_att_revpos(#doc{revs={RevPos,_Revs},atts=Atts}=Doc) ->
 doc_flush_atts(Doc, Fd) ->
     Doc#doc{atts=[flush_att(Fd, Att) || Att <- Doc#doc.atts]}.
 
+flush_att(Fd, #att{att_len=Len}=Att) ->
+    Threshold = list_to_integer(couch_config:get("external_attachments","threshold","262144")),
+    Chunked = couch_config:get("external_attachments","chunked","true"),
+    case (Len == undefined andalso Chunked == "true") orelse (Len >= Threshold) of
+        true ->
+            flush_ext_att(Att);
+        false ->
+            flush_int_att(Fd, Att)
+    end.
+
 check_md5(_NewSig, <<>>) -> ok;
 check_md5(Sig1, Sig2) when Sig1 == Sig2 -> ok;
 check_md5(_, _) -> throw(md5_mismatch).
 
-flush_att(Fd, #att{data={Fd0, _}}=Att) when Fd0 == Fd ->
+flush_int_att(Fd, #att{data={Fd0, _}}=Att) when Fd0 == Fd ->
     % already written to our file, nothing to write
     Att;
 
-flush_att(Fd, #att{data={OtherFd,StreamPointer}, md5=InMd5,
+flush_int_att(Fd, #att{data={OtherFd,StreamPointer}, md5=InMd5,
     disk_len=InDiskLen} = Att) ->
     {NewStreamData, Len, _IdentityLen, Md5, IdentityMd5} =
             couch_stream:copy_to_new_stream(OtherFd, StreamPointer, Fd),
     check_md5(IdentityMd5, InMd5),
     Att#att{data={Fd, NewStreamData}, md5=Md5, att_len=Len, disk_len=InDiskLen};
 
-flush_att(Fd, #att{data=Data}=Att) when is_binary(Data) ->
-    with_stream(Fd, Att, fun(OutputStream) ->
+flush_int_att(Fd, #att{data=Data}=Att) when is_binary(Data) ->
+    with_int_stream(Fd, Att, fun(OutputStream) ->
         couch_stream:write(OutputStream, Data)
     end);
 
-flush_att(Fd, #att{data=Fun,att_len=undefined}=Att) when is_function(Fun) ->
-    with_stream(Fd, Att, fun(OutputStream) ->
+flush_int_att(Fd, #att{data=Fun,att_len=undefined}=Att) when is_function(Fun) ->
+    with_int_stream(Fd, Att, fun(OutputStream) ->
         % Fun(MaxChunkSize, WriterFun) must call WriterFun
         % once for each chunk of the attachment,
         Fun(4096,
@@ -857,11 +867,48 @@ flush_att(Fd, #att{data=Fun,att_len=undefined}=Att) when is_function(Fun) ->
             end, ok)
     end);
 
-flush_att(Fd, #att{data=Fun,att_len=AttLen}=Att) when is_function(Fun) ->
-    with_stream(Fd, Att, fun(OutputStream) ->
-        write_streamed_attachment(OutputStream, Fun, AttLen)
+flush_int_att(Fd, #att{data=Fun,att_len=AttLen}=Att) when is_function(Fun) ->
+    with_int_stream(Fd, Att, fun(OutputStream) ->
+        write_int_streamed_attachment(OutputStream, Fun, AttLen)
     end).
 
+flush_ext_att(#att{data=Data}=Att) when is_binary(Data) ->
+    with_ext_stream(Att, fun(OutputStream) ->
+        couch_external_attachment:write(OutputStream, Data)
+    end);
+flush_ext_att(#att{data=Fun,att_len=undefined}=Att) when is_function(Fun) ->
+    with_ext_stream(Att, fun(OutputStream) ->
+        Fun(16384,
+            fun({0, _Footers}, _) ->
+                ok;
+            ({_Length, Chunk}, _) ->
+                couch_external_attachment:write(OutputStream, Chunk)
+            end, ok)
+    end);
+flush_ext_att(#att{data=Fun,att_len=Len}=Att) when is_function(Fun) ->
+  with_ext_stream(Att, fun(OutputStream) ->
+        write_ext_streamed_attachment(OutputStream, Fun, Len)
+    end).
+
+with_ext_stream(Att, Fun) ->
+    UUID = couch_uuids:new(),
+    Path = get_external_path(UUID),
+    ok = filelib:ensure_dir(Path),
+    {ok, Stream} = couch_external_attachment:open(Path),
+    Fun(Stream),
+    ok = couch_external_attachment:sync(Stream),
+    {Len, Md5} = couch_external_attachment:close(Stream),
+    Att#att{
+        data=[],
+        att_len=Len,
+        disk_len=Len,
+        md5=Md5,
+        location={external, UUID}
+    }.
+
+get_external_path(UUID) ->
+    Dir = couch_config:get("couchdb", "attachment_dir", "."),
+    filename:join(Dir, UUID).
 
 compressible_att_type(MimeType) when is_binary(MimeType) ->
     compressible_att_type(?b2l(MimeType));
@@ -890,7 +937,7 @@ compressible_att_type(MimeType) ->
 % is present in the request, but there is no Content-MD5
 % trailer, we're free to ignore this inconsistency and
 % pretend that no Content-MD5 exists.
-with_stream(Fd, #att{md5=InMd5,type=Type,encoding=Enc}=Att, Fun) ->
+with_int_stream(Fd, #att{md5=InMd5,type=Type,encoding=Enc}=Att, Fun) ->
     {ok, OutputStream} = case (Enc =:= identity) andalso
         compressible_att_type(Type) of
     true ->
@@ -942,12 +989,19 @@ with_stream(Fd, #att{md5=InMd5,type=Type,encoding=Enc}=Att, Fun) ->
     }.
 
 
-write_streamed_attachment(_Stream, _F, 0) ->
+write_int_streamed_attachment(_Stream, _F, 0) ->
     ok;
-write_streamed_attachment(Stream, F, LenLeft) when LenLeft > 0 ->
+write_int_streamed_attachment(Stream, F, LenLeft) when LenLeft > 0 ->
     Bin = F(),
     ok = couch_stream:write(Stream, Bin),
-    write_streamed_attachment(Stream, F, LenLeft - size(Bin)).
+    write_int_streamed_attachment(Stream, F, LenLeft - size(Bin)).
+
+write_ext_streamed_attachment(_Stream, _F, 0) ->
+    ok;
+write_ext_streamed_attachment(Stream, F, LenLeft) when LenLeft > 0 ->
+    Bin = F(),
+    ok = couch_external_attachment:write(Stream, Bin),
+    write_ext_streamed_attachment(Stream, F, LenLeft - size(Bin)).
 
 enum_docs_since_reduce_to_count(Reds) ->
     couch_btree:final_reduce(

@@ -40,6 +40,7 @@ source_files = \
     couch_doc.erl \
     couch_drv.erl \
     couch_event_sup.erl \
+    couch_external_attachment.erl \
     couch_external_manager.erl \
     couch_external_server.erl \
     couch_file.erl \
@@ -105,6 +106,7 @@ compiled_files = \
     couch_doc.beam \
     couch_drv.beam \
     couch_event_sup.beam \
+    couch_external_attachment.beam \
     couch_external_manager.beam \
     couch_external_server.beam \
     couch_file.beam \
