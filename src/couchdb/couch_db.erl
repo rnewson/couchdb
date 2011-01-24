@@ -872,7 +872,7 @@ flush_int_att(Fd, #att{data=Fun,att_len=AttLen}=Att) when is_function(Fun) ->
         write_int_streamed_attachment(OutputStream, Fun, AttLen)
     end).
 
-flush_ext_att(_Fd, DbName, _DocId, #att{data=Data,location={external,{DbName,_}}=From}=Att) ->
+flush_ext_att(_Fd, DbName, _DocId, #att{location={external,{DbName,_}}}=Att) ->
     Att;
 flush_ext_att(Fd, DbName, DocId, #att{name=AttName, data={_,StreamInfo},
     location={external,{DbName0,_}}=From}=Att) ->
