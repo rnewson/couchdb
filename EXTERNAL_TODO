@@ -1,5 +1,5 @@
 
-1) local -> local replication (make hardlink)
+1) local -> local replication (make hardlink) - DONE
 2) create pending dir
 3) new attachments in pending dir, synced, write_and_commit, then moved into place.
 4) deleted attachments moved to pending dir, write_and_commit, then deleted
