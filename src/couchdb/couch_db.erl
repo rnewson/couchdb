@@ -662,7 +662,7 @@ update_docs(Db, Docs, Options, replicated_changes) ->
         DocErrors = [],
         DocBuckets3 = DocBuckets
     end,
-    DocBuckets4 = [[doc_flush_atts(check_dup_atts(Doc), Db#db.updater_fd)
+    DocBuckets4 = [[doc_flush_atts(Db, check_dup_atts(Doc))
             || Doc <- Bucket] || Bucket <- DocBuckets3],
     {ok, []} = write_and_commit(Db, DocBuckets4, [], [merge_conflicts | Options]),
     {ok, DocErrors};
@@ -717,8 +717,8 @@ update_docs(Db, Docs, Options, interactive_edit) ->
         Options2 = if AllOrNothing -> [merge_conflicts];
                 true -> [] end ++ Options,
         DocBuckets3 = [[
-                doc_flush_atts(set_new_att_revpos(
-                        check_dup_atts(Doc)), Db#db.updater_fd)
+                doc_flush_atts(Db, set_new_att_revpos(
+                        check_dup_atts(Doc)))
                 || Doc <- B] || B <- DocBuckets2],
         {DocBuckets4, IdRevs} = new_revs(DocBuckets3, [], []),
         
@@ -787,7 +787,7 @@ write_and_commit(#db{update_pid=UpdatePid}=Db, DocBuckets,
             % compaction. Retry by reopening the db and writing to the current file
             {ok, Db2} = open_ref_counted(Db#db.main_pid, self()),
             DocBuckets2 = [
-                [doc_flush_atts(Doc, Db2#db.updater_fd) || Doc <- Bucket] ||
+                [doc_flush_atts(Db2, Doc) || Doc <- Bucket] ||
                 Bucket <- DocBuckets
             ],
             % We only retry once
@@ -812,15 +812,15 @@ set_new_att_revpos(#doc{revs={RevPos,_Revs},atts=Atts}=Doc) ->
         end, Atts)}.
         
 
-doc_flush_atts(Doc, Fd) ->
-    Doc#doc{atts=[flush_att(Fd, Att) || Att <- Doc#doc.atts]}.
+doc_flush_atts(Db, Doc) ->
+    Doc#doc{atts=[flush_att(Db, Doc, Att) || Att <- Doc#doc.atts]}.
 
-flush_att(Fd, #att{att_len=Len}=Att) ->
+flush_att(#db{updater_fd=Fd}=Db, Doc, #att{att_len=Len}=Att) ->
     Threshold = list_to_integer(couch_config:get("external_attachments","threshold","262144")),
     Chunked = couch_config:get("external_attachments","chunked","true"),
     case (Len == undefined andalso Chunked == "true") orelse (Len >= Threshold) of
         true ->
-            flush_ext_att(Fd, Att);
+            flush_ext_att(Db, Doc, Att);
         false ->
             flush_int_att(Fd, Att)
     end.
@@ -872,12 +872,12 @@ flush_int_att(Fd, #att{data=Fun,att_len=AttLen}=Att) when is_function(Fun) ->
         write_int_streamed_attachment(OutputStream, Fun, AttLen)
     end).
 
-flush_ext_att(Fd, #att{data=Data}=Att) when is_binary(Data) ->
-    with_ext_stream(Fd, Att, fun(OutputStream) ->
+flush_ext_att(Db, Doc, #att{data=Data}=Att) when is_binary(Data) ->
+    with_ext_stream(Db, Doc, Att, fun(OutputStream) ->
         couch_external_attachment:write(OutputStream, Data)
     end);
-flush_ext_att(Fd, #att{data=Fun,att_len=undefined}=Att) when is_function(Fun) ->
-    with_ext_stream(Fd, Att, fun(OutputStream) ->
+flush_ext_att(Db, Doc, #att{data=Fun,att_len=undefined}=Att) when is_function(Fun) ->
+    with_ext_stream(Db, Doc, Att, fun(OutputStream) ->
         Fun(16384,
             fun({0, Footers}, _) ->
                 F = mochiweb_headers:from_binary(Footers),
@@ -891,13 +891,13 @@ flush_ext_att(Fd, #att{data=Fun,att_len=undefined}=Att) when is_function(Fun) ->
                 couch_external_attachment:write(OutputStream, Chunk)
             end, ok)
     end);
-flush_ext_att(Fd, #att{data=Fun,att_len=Len}=Att) when is_function(Fun) ->
-  with_ext_stream(Fd, Att, fun(OutputStream) ->
+flush_ext_att(Db, Doc, #att{data=Fun,att_len=Len}=Att) when is_function(Fun) ->
+  with_ext_stream(Db, Doc, Att, fun(OutputStream) ->
         write_ext_streamed_attachment(OutputStream, Fun, Len)
     end).
 
-with_ext_stream(Fd, #att{md5=InMd5}=Att, Fun) ->
-    Location = {external, couch_uuids:new()},
+with_ext_stream(#db{name=DbName,updater_fd=Fd}=Db, Doc, #att{md5=InMd5}=Att, Fun) ->
+    Location = {external, filename:join(DbName, couch_uuids:new())},
     Path = get_external_path(Location),
     ok = filelib:ensure_dir(Path),
     {ok, OutputStream} = couch_external_attachment:open(Path),
@@ -922,9 +922,9 @@ with_ext_stream(Fd, #att{md5=InMd5}=Att, Fun) ->
         location=Location
     }.
 
-get_external_path({external, UUID}) ->
-    Dir = couch_config:get("couchdb", "attachment_dir", "."),
-    filename:join(Dir, UUID).
+get_external_path({external, Location}) ->
+    RootDir = couch_config:get("couchdb", "attachment_dir", "."),
+    filename:join(RootDir, Location).
 
 compressible_att_type(MimeType) when is_binary(MimeType) ->
     compressible_att_type(?b2l(MimeType));
