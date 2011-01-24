@@ -665,7 +665,6 @@ update_docs(Db, Docs, Options, replicated_changes) ->
     DocBuckets4 = [[doc_flush_atts(Db, check_dup_atts(Doc))
             || Doc <- Bucket] || Bucket <- DocBuckets3],
     {ok, []} = write_and_commit(Db, DocBuckets4, [], [merge_conflicts | Options]),
-    ok = purge_limbo(Db),
     {ok, DocErrors};
 
 update_docs(Db, Docs, Options, interactive_edit) ->
@@ -724,8 +723,7 @@ update_docs(Db, Docs, Options, interactive_edit) ->
         {DocBuckets4, IdRevs} = new_revs(DocBuckets3, [], []),
         
         {ok, CommitResults} = write_and_commit(Db, DocBuckets4, NonRepDocs, Options2),
-        ok = purge_limbo(Db),
-
+        
         ResultsDict = dict:from_list(IdRevs ++ CommitResults ++ PreCommitFailures),
         {ok, lists:map(
             fun(#doc{id=Id,revs={Pos, RevIds}}) ->
@@ -881,7 +879,7 @@ flush_ext_att(#db{updater_fd=Fd,name=DbName}=Db, _Doc, #att{data={_,StreamInfo},
     % copy between local databases.
     FromPath = get_external_path(From),
     To = new_location(Db),
-    ToPath = get_limbo_path(To),
+    ToPath = get_external_path(To),
     ok = filelib:ensure_dir(ToPath),
     case file:make_link(FromPath, ToPath) of
         ok ->
@@ -916,7 +914,7 @@ flush_ext_att(Db, Doc, #att{data=Fun,att_len=Len}=Att) when is_function(Fun) ->
 
 with_ext_stream(#db{updater_fd=Fd}=Db, _Doc, #att{md5=InMd5}=Att, Fun) ->
     Location = new_location(Db),
-    Path = get_limbo_path(Location),
+    Path = get_external_path(Location),
     ok = filelib:ensure_dir(Path),
     {ok, OutputStream} = couch_external_attachment:open(Path),
     ReqMd5 = case Fun(OutputStream) of
@@ -944,28 +942,8 @@ new_location(#db{name=DbName}) ->
     {external, {DbName, couch_uuids:new()}}.
 
 get_external_path({external, {Dir, Filename}}) ->
-    filename:join(attachment_dir(Dir), Filename).
-
-get_limbo_path({external, {Dir, Filename}}) ->
-    filename:join(limbo_dir(Dir), Filename).
-
-attachment_dir(DbName) ->
     RootDir = couch_config:get("couchdb", "attachment_dir", "."),
-    filename:join(RootDir, DbName).
-
-limbo_dir(DbName) ->
-    filename:join(attachment_dir(DbName), "_limbo").
-
-purge_limbo(#db{name=DbName}) ->
-    FromDir = limbo_dir(DbName),
-    filelib:ensure_dir(filename:join(FromDir, "foo")),
-    ToDir = attachment_dir(DbName),
-    {ok, FromFiles} = file:list_dir(FromDir),
-    lists:foreach(fun(File) ->
-        file:rename(
-            filename:join(FromDir, File),
-            filename:join(ToDir, File)) end,
-        FromFiles).
+    filename:join(filename:join(RootDir, Dir), Filename).
 
 compressible_att_type(MimeType) when is_binary(MimeType) ->
     compressible_att_type(?b2l(MimeType));
