@@ -27,7 +27,7 @@
 -export([init/1,terminate/2,handle_call/3,handle_cast/2,code_change/3,handle_info/2]).
 -export([changes_since/5,changes_since/6,read_doc/2,new_revid/1]).
 -export([check_is_admin/1, check_is_member/1]).
--export([reopen/1]).
+-export([reopen/1,get_external_path/1]).
 
 -include("couch_db.hrl").
 
@@ -897,8 +897,8 @@ flush_ext_att(Fd, #att{data=Fun,att_len=Len}=Att) when is_function(Fun) ->
     end).
 
 with_ext_stream(Fd, #att{md5=InMd5}=Att, Fun) ->
-    UUID = couch_uuids:new(),
-    Path = get_external_path(UUID),
+    Location = {external, couch_uuids:new()},
+    Path = get_external_path(Location),
     ok = filelib:ensure_dir(Path),
     {ok, OutputStream} = couch_external_attachment:open(Path),
     ReqMd5 = case Fun(OutputStream) of
@@ -919,10 +919,10 @@ with_ext_stream(Fd, #att{md5=InMd5}=Att, Fun) ->
         att_len=Len,
         disk_len=Len,
         md5=IdentityMd5,
-        location={external, UUID}
+        location=Location
     }.
 
-get_external_path(UUID) ->
+get_external_path({external, UUID}) ->
     Dir = couch_config:get("couchdb", "attachment_dir", "."),
     filename:join(Dir, UUID).
 
