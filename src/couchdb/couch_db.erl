@@ -820,7 +820,7 @@ flush_att(Fd, #att{att_len=Len}=Att) ->
     Chunked = couch_config:get("external_attachments","chunked","true"),
     case (Len == undefined andalso Chunked == "true") orelse (Len >= Threshold) of
         true ->
-            flush_ext_att(Att);
+            flush_ext_att(Fd, Att);
         false ->
             flush_int_att(Fd, Att)
     end.
@@ -872,37 +872,53 @@ flush_int_att(Fd, #att{data=Fun,att_len=AttLen}=Att) when is_function(Fun) ->
         write_int_streamed_attachment(OutputStream, Fun, AttLen)
     end).
 
-flush_ext_att(#att{data=Data}=Att) when is_binary(Data) ->
-    with_ext_stream(Att, fun(OutputStream) ->
+flush_ext_att(Fd, #att{data=Data}=Att) when is_binary(Data) ->
+    with_ext_stream(Fd, Att, fun(OutputStream) ->
         couch_external_attachment:write(OutputStream, Data)
     end);
-flush_ext_att(#att{data=Fun,att_len=undefined}=Att) when is_function(Fun) ->
-    with_ext_stream(Att, fun(OutputStream) ->
+flush_ext_att(Fd, #att{data=Fun,att_len=undefined}=Att) when is_function(Fun) ->
+    with_ext_stream(Fd, Att, fun(OutputStream) ->
         Fun(16384,
-            fun({0, _Footers}, _) ->
-                ok;
+            fun({0, Footers}, _) ->
+                F = mochiweb_headers:from_binary(Footers),
+                case mochiweb_headers:get_value("Content-MD5", F) of
+                undefined ->
+                    ok;
+                Md5 ->
+                    {md5, base64:decode(Md5)}
+                end;
             ({_Length, Chunk}, _) ->
                 couch_external_attachment:write(OutputStream, Chunk)
             end, ok)
     end);
-flush_ext_att(#att{data=Fun,att_len=Len}=Att) when is_function(Fun) ->
-  with_ext_stream(Att, fun(OutputStream) ->
+flush_ext_att(Fd, #att{data=Fun,att_len=Len}=Att) when is_function(Fun) ->
+  with_ext_stream(Fd, Att, fun(OutputStream) ->
         write_ext_streamed_attachment(OutputStream, Fun, Len)
     end).
 
-with_ext_stream(Att, Fun) ->
+with_ext_stream(Fd, #att{md5=InMd5}=Att, Fun) ->
     UUID = couch_uuids:new(),
     Path = get_external_path(UUID),
     ok = filelib:ensure_dir(Path),
-    {ok, Stream} = couch_external_attachment:open(Path),
-    Fun(Stream),
-    ok = couch_external_attachment:sync(Stream),
-    {Len, Md5} = couch_external_attachment:close(Stream),
+    {ok, OutputStream} = couch_external_attachment:open(Path),
+    ReqMd5 = case Fun(OutputStream) of
+        {md5, FooterMd5} ->
+            case InMd5 of
+                md5_in_footer -> FooterMd5;
+                _ -> InMd5
+            end;
+        _ ->
+            InMd5
+    end,
+    ok = couch_external_attachment:sync(OutputStream),
+    {StreamInfo, Len, IdentityMd5} =
+        couch_external_attachment:close(OutputStream),
+    check_md5(IdentityMd5, ReqMd5),
     Att#att{
-        data=[],
+        data={Fd, StreamInfo},
         att_len=Len,
         disk_len=Len,
-        md5=Md5,
+        md5=IdentityMd5,
         location={external, UUID}
     }.
 

@@ -94,7 +94,7 @@ handle_call({write, Bin}, _From, #ext_stream{len=Len, md5=Md5, fd=Fd}=Stream) ->
 handle_call(close, _From, #ext_stream{len=Len,md5=Md5,fd=Fd}=Stream) ->
     ok = file:close(Fd),
     FinalMd5 = couch_util:md5_final(Md5),
-    {stop, normal, {Len, FinalMd5}, Stream#ext_stream{fd=nil}}.
+    {stop, normal, {{0, Len}, Len, FinalMd5}, Stream#ext_stream{fd=nil}}.
 
 handle_cast(_Msg, State) ->
     {noreply,State}.
