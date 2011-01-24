@@ -815,12 +815,12 @@ set_new_att_revpos(#doc{revs={RevPos,_Revs},atts=Atts}=Doc) ->
 doc_flush_atts(Db, Doc) ->
     Doc#doc{atts=[flush_att(Db, Doc, Att) || Att <- Doc#doc.atts]}.
 
-flush_att(#db{updater_fd=Fd}=Db, Doc, #att{att_len=Len}=Att) ->
+flush_att(#db{updater_fd=Fd,name=DbName}, #doc{id=DocId}, #att{att_len=Len}=Att) ->
     Threshold = list_to_integer(couch_config:get("external_attachments","threshold","262144")),
     Chunked = couch_config:get("external_attachments","chunked","true"),
     case (Len == undefined andalso Chunked == "true") orelse (Len >= Threshold) of
         true ->
-            flush_ext_att(Db, Doc, Att);
+            flush_ext_att(Fd, DbName, DocId, Att);
         false ->
             flush_int_att(Fd, Att)
     end.
@@ -872,13 +872,13 @@ flush_int_att(Fd, #att{data=Fun,att_len=AttLen}=Att) when is_function(Fun) ->
         write_int_streamed_attachment(OutputStream, Fun, AttLen)
     end).
 
-flush_ext_att(#db{name=DbName}=Db, _Doc, #att{data=Data,location={external,{DbName,_}}=From}=Att) ->
+flush_ext_att(_Fd, DbName, _DocId, #att{data=Data,location={external,{DbName,_}}=From}=Att) ->
     Att;
-flush_ext_att(#db{updater_fd=Fd,name=DbName}=Db, _Doc, #att{data={_,StreamInfo},
+flush_ext_att(Fd, DbName, DocId, #att{name=AttName, data={_,StreamInfo},
     location={external,{DbName0,_}}=From}=Att) ->
     % copy between local databases.
     FromPath = get_external_path(From),
-    To = new_location(Db),
+    To = new_location(DbName, DocId, AttName),
     ToPath = get_external_path(To),
     ok = filelib:ensure_dir(ToPath),
     case file:make_link(FromPath, ToPath) of
@@ -888,12 +888,12 @@ flush_ext_att(#db{updater_fd=Fd,name=DbName}=Db, _Doc, #att{data={_,StreamInfo},
             {ok, _} = filelib:copy(FromPath, ToPath)
     end,
     Att#att{data={Fd, StreamInfo}, location=To};
-flush_ext_att(Db, Doc, #att{data=Data}=Att) when is_binary(Data) ->
-    with_ext_stream(Db, Doc, Att, fun(OutputStream) ->
+flush_ext_att(Fd, DbName, DocId, #att{data=Data}=Att) when is_binary(Data) ->
+    with_ext_stream(Fd, DbName, DocId, Att, fun(OutputStream) ->
         couch_external_attachment:write(OutputStream, Data)
     end);
-flush_ext_att(Db, Doc, #att{data=Fun,att_len=undefined}=Att) when is_function(Fun) ->
-    with_ext_stream(Db, Doc, Att, fun(OutputStream) ->
+flush_ext_att(Fd, DbName, DocId, #att{data=Fun,att_len=undefined}=Att) when is_function(Fun) ->
+    with_ext_stream(Fd, DbName, DocId, Att, fun(OutputStream) ->
         Fun(16384,
             fun({0, Footers}, _) ->
                 F = mochiweb_headers:from_binary(Footers),
@@ -907,13 +907,13 @@ flush_ext_att(Db, Doc, #att{data=Fun,att_len=undefined}=Att) when is_function(Fu
                 couch_external_attachment:write(OutputStream, Chunk)
             end, ok)
     end);
-flush_ext_att(Db, Doc, #att{data=Fun,att_len=Len}=Att) when is_function(Fun) ->
-  with_ext_stream(Db, Doc, Att, fun(OutputStream) ->
+flush_ext_att(Fd, DbName, DocId, #att{data=Fun,att_len=Len}=Att) when is_function(Fun) ->
+  with_ext_stream(Fd, DbName, DocId, Att, fun(OutputStream) ->
         write_ext_streamed_attachment(OutputStream, Fun, Len)
     end).
 
-with_ext_stream(#db{updater_fd=Fd}=Db, _Doc, #att{md5=InMd5}=Att, Fun) ->
-    Location = new_location(Db),
+with_ext_stream(Fd, DbName, DocId, #att{md5=InMd5,name=AttName}=Att, Fun) ->
+    Location = new_location(DbName, DocId, AttName),
     Path = get_external_path(Location),
     ok = filelib:ensure_dir(Path),
     {ok, OutputStream} = couch_external_attachment:open(Path),
@@ -938,7 +938,7 @@ with_ext_stream(#db{updater_fd=Fd}=Db, _Doc, #att{md5=InMd5}=Att, Fun) ->
         location=Location
     }.
 
-new_location(#db{name=DbName}) ->
+new_location(DbName, DocId, AttName) ->
     {external, {DbName, couch_uuids:new()}}.
 
 get_external_path({external, {Dir, Filename}}) ->
