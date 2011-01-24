@@ -877,11 +877,16 @@ flush_ext_att(#db{name=DbName}=Db, _Doc, #att{data=Data,location={external,{DbNa
 flush_ext_att(#db{updater_fd=Fd,name=DbName}=Db, _Doc, #att{data={_,StreamInfo},
     location={external,{DbName0,_}}=From}=Att) ->
     % copy between local databases.
+    FromPath = get_external_path(From),
     To = new_location(Db),
-    ok = filelib:ensure_dir(get_external_path(To)),
-    ok = file:make_link(
-        get_external_path(From),
-        get_external_path(To)),
+    ToPath = get_external_path(To),
+    ok = filelib:ensure_dir(ToPath),
+    case file:make_link(FromPath, ToPath) of
+        ok ->
+            ok;
+        {error, enotsup} ->
+            {ok, _} = filelib:copy(FromPath, ToPath)
+    end,
     Att#att{data={Fd, StreamInfo}, location=To};
 flush_ext_att(Db, Doc, #att{data=Data}=Att) when is_binary(Data) ->
     with_ext_stream(Db, Doc, Att, fun(OutputStream) ->
