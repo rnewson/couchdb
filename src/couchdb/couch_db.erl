@@ -875,7 +875,7 @@ flush_int_att(Fd, #att{data=Fun,att_len=AttLen}=Att) when is_function(Fun) ->
 flush_ext_att(_Fd, DbName, _DocId, #att{location={external,{DbName,_}}}=Att) ->
     Att;
 flush_ext_att(Fd, DbName, DocId, #att{name=AttName, data={_,StreamInfo},
-    location={external,{DbName0,_}}=From}=Att) ->
+    location={external,{DbName0,_}}=From}=Att) when DbName /= DbName0 ->
     % copy between local databases.
     FromPath = get_external_path(From),
     To = new_location(DbName, DocId, AttName),
