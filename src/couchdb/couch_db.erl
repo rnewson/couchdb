@@ -939,7 +939,11 @@ with_ext_stream(Fd, DbName, DocId, #att{md5=InMd5,name=AttName}=Att, Fun) ->
     }.
 
 new_location(DbName, DocId, AttName) ->
-    {external, {DbName, couch_uuids:new()}}.
+    {A, B, C} = erlang:now(),
+    Name = lists:flatten(
+        io_lib:format("~s-~s-~s-~B-~B-~B", [DbName, DocId, AttName, A, B, C])
+    ),
+    {external, {DbName, Name}}.
 
 get_external_path({external, {Dir, Filename}}) ->
     RootDir = couch_config:get("couchdb", "attachment_dir", "."),
