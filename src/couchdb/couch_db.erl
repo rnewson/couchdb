@@ -872,6 +872,17 @@ flush_int_att(Fd, #att{data=Fun,att_len=AttLen}=Att) when is_function(Fun) ->
         write_int_streamed_attachment(OutputStream, Fun, AttLen)
     end).
 
+flush_ext_att(#db{name=DbName}=Db, _Doc, #att{data=Data,location={external,{DbName,_}}=From}=Att) ->
+    Att;
+flush_ext_att(#db{updater_fd=Fd,name=DbName}=Db, _Doc, #att{data={_,StreamInfo},
+    location={external,{DbName0,_}}=From}=Att) ->
+    % copy between local databases.
+    To = new_location(Db),
+    ok = filelib:ensure_dir(get_external_path(To)),
+    ok = file:make_link(
+        get_external_path(From),
+        get_external_path(To)),
+    Att#att{data={Fd, StreamInfo}, location=To};
 flush_ext_att(Db, Doc, #att{data=Data}=Att) when is_binary(Data) ->
     with_ext_stream(Db, Doc, Att, fun(OutputStream) ->
         couch_external_attachment:write(OutputStream, Data)
@@ -896,8 +907,8 @@ flush_ext_att(Db, Doc, #att{data=Fun,att_len=Len}=Att) when is_function(Fun) ->
         write_ext_streamed_attachment(OutputStream, Fun, Len)
     end).
 
-with_ext_stream(#db{name=DbName,updater_fd=Fd}=Db, Doc, #att{md5=InMd5}=Att, Fun) ->
-    Location = {external, filename:join(DbName, couch_uuids:new())},
+with_ext_stream(#db{updater_fd=Fd}=Db, _Doc, #att{md5=InMd5}=Att, Fun) ->
+    Location = new_location(Db),
     Path = get_external_path(Location),
     ok = filelib:ensure_dir(Path),
     {ok, OutputStream} = couch_external_attachment:open(Path),
@@ -922,9 +933,12 @@ with_ext_stream(#db{name=DbName,updater_fd=Fd}=Db, Doc, #att{md5=InMd5}=Att, Fun
         location=Location
     }.
 
-get_external_path({external, Location}) ->
+new_location(#db{name=DbName}) ->
+    {external, {DbName, couch_uuids:new()}}.
+
+get_external_path({external, {Dir, Filename}}) ->
     RootDir = couch_config:get("couchdb", "attachment_dir", "."),
-    filename:join(RootDir, Location).
+    filename:join(filename:join(RootDir, Dir), Filename).
 
 compressible_att_type(MimeType) when is_binary(MimeType) ->
     compressible_att_type(?b2l(MimeType));
