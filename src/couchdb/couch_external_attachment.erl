@@ -39,7 +39,7 @@ sync(Stream) ->
 close(Stream) ->
     gen_server:call(Stream, close, infinity).
 
-att_foldl(#att{location={external, _}=Location,md5=Md5}, Fun, Acc) ->
+att_foldl(#att{location={external, _}=Location}, Fun, Acc) ->
     Path = couch_db:get_external_path(Location),
     {ok, Fd} = file:open(Path, [read, raw, binary]),
     try
