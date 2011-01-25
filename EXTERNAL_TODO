@@ -5,3 +5,5 @@
 4) deleted attachments moved to pending dir, write_and_commit, then deleted
 5) pending dir scanned on db open, items deleted or moved into place as needed.
 6) move _attachments/%db%/ to .delete dir on db deletion
+7) handle compression
+8) handle ranges
