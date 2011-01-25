@@ -665,6 +665,7 @@ update_docs(Db, Docs, Options, replicated_changes) ->
     DocBuckets4 = [[doc_flush_atts(Db, check_dup_atts(Doc))
             || Doc <- Bucket] || Bucket <- DocBuckets3],
     {ok, []} = write_and_commit(Db, DocBuckets4, [], [merge_conflicts | Options]),
+    clean_attachments(Db, DocBuckets4),
     {ok, DocErrors};
 
 update_docs(Db, Docs, Options, interactive_edit) ->
@@ -723,7 +724,7 @@ update_docs(Db, Docs, Options, interactive_edit) ->
         {DocBuckets4, IdRevs} = new_revs(DocBuckets3, [], []),
         
         {ok, CommitResults} = write_and_commit(Db, DocBuckets4, NonRepDocs, Options2),
-        
+        clean_attachments(Db, DocBuckets4),
         ResultsDict = dict:from_list(IdRevs ++ CommitResults ++ PreCommitFailures),
         {ok, lists:map(
             fun(#doc{id=Id,revs={Pos, RevIds}}) ->
@@ -872,10 +873,10 @@ flush_int_att(Fd, #att{data=Fun,att_len=AttLen}=Att) when is_function(Fun) ->
         write_int_streamed_attachment(OutputStream, Fun, AttLen)
     end).
 
-flush_ext_att(_Fd, DbName, _DocId, #att{location={external,{DbName,_}}}=Att) ->
+flush_ext_att(_Fd, DbName, _DocId, #att{location={external,[DbName|_]}}=Att) ->
     Att;
 flush_ext_att(Fd, DbName, DocId, #att{name=AttName, data={_,StreamInfo},
-    location={external,{DbName0,_}}=From}=Att) when DbName /= DbName0 ->
+    location={external,[DbName0|_]}=From}=Att) when DbName /= DbName0 ->
     % copy between local databases.
     FromPath = get_external_path(From),
     To = new_location(DbName, DocId, AttName),
@@ -940,14 +941,27 @@ with_ext_stream(Fd, DbName, DocId, #att{md5=InMd5,name=AttName}=Att, Fun) ->
 
 new_location(DbName, DocId, AttName) ->
     {A, B, C} = erlang:now(),
+    {external, [DbName, DocId, AttName, A, B, C]}.
+
+clean_attachments(#db{name=DbName}, DocBuckets) ->
+    DbDir = get_db_path(DbName),
+    Docs = [{Id, Atts} || [#doc{id=Id,atts=Atts}|_] <- DocBuckets],
+    lists:foreach(fun({Id, Atts}) ->
+        RetainAttachments = [get_external_path(Loc) || #att{location=Loc} <- Atts],
+        Pattern = io_lib:format("~s-~s-*", [DbName, Id]),
+        OnDiskAttachments = [filename:join(DbDir, File) || File <- filelib:wildcard(Pattern, DbDir)],
+        DeletedAttachments = lists:subtract(OnDiskAttachments, RetainAttachments),
+        lists:foreach(fun(File) -> file:delete(File) end, DeletedAttachments) end, Docs).
+
+get_external_path({external, [DbName, DocId, AttName, A, B, C]}) ->
     Name = lists:flatten(
         io_lib:format("~s-~s-~s-~B-~B-~B", [DbName, DocId, AttName, A, B, C])
     ),
-    {external, {DbName, Name}}.
+    filename:join(get_db_path(DbName), Name).
 
-get_external_path({external, {Dir, Filename}}) ->
+get_db_path(DbName) ->
     RootDir = couch_config:get("couchdb", "attachment_dir", "."),
-    filename:join(filename:join(RootDir, Dir), Filename).
+    filename:join(RootDir, DbName).
 
 compressible_att_type(MimeType) when is_binary(MimeType) ->
     compressible_att_type(?b2l(MimeType));
