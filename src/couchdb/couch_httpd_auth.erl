@@ -231,7 +231,6 @@ cookie_auth_cookie(Req, User, Secret, TimeStamp) ->
     Hash = crypto:sha_mac(Secret, SessionData),
     mochiweb_cookies:cookie("AuthSession",
         couch_util:encodeBase64Url(SessionData ++ ":" ++ ?b2l(Hash)),
-        % TODO add {secure, true} when SSL is detected
         [{path, "/"}, cookie_scheme(Req), {max_age, cookie_timeout()}]).
 
 cookie_timeout() ->
