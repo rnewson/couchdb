@@ -184,8 +184,7 @@ cookie_authentication_handler(#httpd{mochi_req=MochiReq}=Req) ->
                 FullSecret = <<Secret/binary, UserSalt/binary>>,
                 ExpectedHash = crypto:sha_mac(FullSecret, User ++ ":" ++ TimeStr),
                 Hash = ?l2b(string:join(HashParts, ":")),
-                Timeout = list_to_integer(
-                    couch_config:get("couch_httpd_auth", "timeout", "600")),
+                Timeout = cookie_timeout(),
                 ?LOG_DEBUG("timeout ~p", [Timeout]),
                 case (catch erlang:list_to_integer(TimeStr, 16)) of
                     TimeStamp when CurrentTime < TimeStamp + Timeout ->
@@ -198,10 +197,10 @@ cookie_authentication_handler(#httpd{mochi_req=MochiReq}=Req) ->
                                     roles=couch_util:get_value(<<"roles">>, UserProps, [])
                                 }, auth={FullSecret, TimeLeft < Timeout*0.9}};
                             _Else ->
-                                Req
+                                throw({unauthorized, <<"Cookie is invalid or has expired.">>})
                         end;
                     _Else ->
-                        Req
+                        throw({unauthorized, <<"Cookie is invalid or has expired.">>})
                 end
             end
         end
@@ -232,7 +231,11 @@ cookie_auth_cookie(User, Secret, TimeStamp) ->
     Hash = crypto:sha_mac(Secret, SessionData),
     mochiweb_cookies:cookie("AuthSession",
         couch_util:encodeBase64Url(SessionData ++ ":" ++ ?b2l(Hash)),
-        [{path, "/"}, {http_only, true}]). % TODO add {secure, true} when SSL is detected
+        % TODO add {secure, true} when SSL is detected
+        [{path, "/"}, {http_only, true}, {max_age, cookie_timeout()}]).
+
+cookie_timeout() ->
+    list_to_integer(couch_config:get("couch_httpd_auth", "timeout", "600")).
 
 hash_password(Password, Salt) ->
     ?l2b(couch_util:to_hex(crypto:sha(<<Password/binary, Salt/binary>>))).
