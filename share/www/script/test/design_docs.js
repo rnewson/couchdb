@@ -52,6 +52,13 @@ couchTests.design_docs = function(debug) {
             "module.id+require('./whynot').foo.string"
         }
       },
+      _attachments:{
+        "bazbar.js": {
+          content_type:"application/javascript",
+          data: "ZXhwb3J0cy5ib29tID0gJ29rJw=="
+        }
+      },
+      attachment_libs : ["bazbar.js"],
       views: {
         all_docs_twice: {
           map:
@@ -117,6 +124,12 @@ couchTests.design_docs = function(debug) {
           map :
             (function(doc) {
               emit(null, require('views/lib/foo/boom').boom);
+            }).toString()
+        },
+        commonjs2 : {
+          map :
+            (function(doc) {
+              emit(null, require('views/lib/bazbar').boom);
             }).toString()
         }
       },
@@ -234,6 +247,10 @@ couchTests.design_docs = function(debug) {
 
     // test commonjs in map functions
     resp = db.view("test/commonjs", {limit:1});
+    T(resp.rows[0].value == 'ok');
+
+    // test commonjs in map functions from attachments
+    resp = db.view("test/commonjs2", {limit:1});
     T(resp.rows[0].value == 'ok');
 
     // test that the _all_docs view returns correctly with keys

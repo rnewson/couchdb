@@ -473,6 +473,7 @@ open_temp_group(DbName, Language, DesignOptions, MapSrc, RedSrc) ->
 set_view_sig(#group{
             views=Views,
             lib={[]},
+            atts=[],
             def_lang=Language,
             design_options=DesignOptions}=G) ->
     ViewInfo = [old_view_format(V) || V <- Views],
@@ -480,10 +481,21 @@ set_view_sig(#group{
 set_view_sig(#group{
             views=Views,
             lib=Lib,
+            atts=[],
             def_lang=Language,
             design_options=DesignOptions}=G) ->
     ViewInfo = [old_view_format(V) || V <- Views],
-    G#group{sig=couch_util:md5(term_to_binary({ViewInfo, Language, DesignOptions, sort_lib(Lib)}))}.
+    G#group{sig=couch_util:md5(term_to_binary({ViewInfo, Language, DesignOptions, sort_lib(Lib)}))};
+set_view_sig(#group{
+            views=Views,
+            lib=Lib,
+            atts=Atts,
+            def_lang=Language,
+            design_options=DesignOptions}=G) ->
+    ViewInfo = [old_view_format(V) || V <- Views],
+    Md5s = [Md5 || #att{md5=Md5} <- Atts],
+    G#group{sig=couch_util:md5(term_to_binary({ViewInfo, Language, DesignOptions, sort_lib(Lib),
+        lists:sort(Md5s)}))}.
 
 % Use the old view record format so group sig's don't change
 old_view_format(View) ->
@@ -551,11 +563,13 @@ get_group_info(State) ->
     ].
 
 % maybe move to another module
-design_doc_to_view_group(#doc{id=Id,body={Fields}}) ->
+design_doc_to_view_group(#doc{id=Id,body={Fields},atts=Atts}) ->
     Language = couch_util:get_value(<<"language">>, Fields, <<"javascript">>),
     {DesignOptions} = couch_util:get_value(<<"options">>, Fields, {[]}),
     {RawViews} = couch_util:get_value(<<"views">>, Fields, {[]}),
     Lib = couch_util:get_value(<<"lib">>, RawViews, {[]}),
+    Atts1 = lists:flatmap(fun(Key) -> [A || A <- Atts, A#att.name == Key] end,
+        couch_util:get_value(<<"attachment_libs">>, Fields, [])),
     % add the views to a dictionary object, with the map source as the key
     DictBySrc =
     lists:foldl(
@@ -584,7 +598,7 @@ design_doc_to_view_group(#doc{id=Id,body={Fields}}) ->
         fun({_Src, View}, N) ->
             {View#view{id_num=N},N+1}
         end, 0, lists:sort(dict:to_list(DictBySrc))),
-    set_view_sig(#group{name=Id, lib=Lib, views=Views, def_lang=Language, design_options=DesignOptions}).
+    set_view_sig(#group{name=Id, lib=Lib, atts=Atts1, views=Views, def_lang=Language, design_options=DesignOptions}).
 
 reset_group(#group{views=Views}=Group) ->
     Views2 = [View#view{btree=nil} || View <- Views],

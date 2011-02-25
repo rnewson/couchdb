@@ -14,7 +14,7 @@
 -behaviour(gen_server).
 
 -export([start_link/1, start_link/2, start_link/3, stop/1]).
--export([set_timeout/2, prompt/2]).
+-export([set_timeout/2, prompt/2, data/2]).
 -export([send/2, writeline/2, readline/1, writejson/2, readjson/1]).
 -export([init/1, terminate/2, handle_call/3, handle_cast/2, handle_info/2, code_change/3]).
 
@@ -49,7 +49,13 @@ send(Pid, Data) ->
     gen_server:cast(Pid, {send, Data}).
 
 prompt(Pid, Data) ->
-    case gen_server:call(Pid, {prompt, Data}, infinity) of
+    prompt(Pid, prompt, Data).
+
+data(Pid, Data) ->
+    prompt(Pid, data, Data).
+
+prompt(Pid, Type, Data) ->
+    case gen_server:call(Pid, {Type, Data}, infinity) of
         {ok, Result} ->
             Result;
         Error ->
@@ -145,6 +151,17 @@ handle_call({prompt, Data}, _From, OsProc) ->
     #os_proc{writer=Writer, reader=Reader} = OsProc,
     try
         Writer(OsProc, Data),
+        {reply, {ok, Reader(OsProc)}, OsProc}
+    catch
+        throw:{error, OsError} ->
+            {reply, OsError, OsProc};
+        throw:OtherError ->
+            {stop, normal, OtherError, OsProc}
+    end;
+handle_call({data, Data}, _From, OsProc) ->
+    #os_proc{reader=Reader} = OsProc,
+    try
+        port_command(OsProc#os_proc.port, Data),
         {reply, {ok, Reader(OsProc)}, OsProc}
     catch
         throw:{error, OsError} ->

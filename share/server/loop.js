@@ -118,6 +118,7 @@ var Loop = function() {
     "ddoc"     : DDoc.ddoc,
     // "view"    : Views.handler,
     "reset"    : State.reset,
+    "add_att"  : State.addAtt,
     "add_fun"  : State.addFun,
     "add_lib"  : State.addLib,
     "map_doc"  : Views.mapDoc,

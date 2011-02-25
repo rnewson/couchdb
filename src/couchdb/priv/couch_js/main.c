@@ -198,6 +198,32 @@ readline(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval) {
 }
 
 static JSBool
+read(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval) {
+    char* bytes = NULL;
+    JSString *str;
+    size_t read = 0;
+    size_t readlen = 0;
+    uint32 byteslen;
+
+    if (!JS_ValueToECMAUint32(cx, argv[0], &byteslen))
+        return JS_FALSE;
+
+    bytes = JS_malloc(cx, byteslen+1);
+    if(bytes == NULL) return JS_FALSE;
+
+    if (fread(bytes, 1, byteslen, stdin) != byteslen)
+        return JS_FALSE;
+
+    str = dec_string(cx, bytes, byteslen+1);
+    JS_free(cx, bytes);
+
+    if(!str) return JS_FALSE;
+
+    *rval = STRING_TO_JSVAL(str);
+    return JS_TRUE;
+}
+
+static JSBool
 seal(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval) {
     JSObject *target;
     JSBool deep = JS_FALSE;
@@ -253,6 +279,7 @@ static JSFunctionSpec global_functions[] = {
     {"print", print, 0, 0, 0},
     {"quit", quit, 0, 0, 0},
     {"readline", readline, 0, 0, 0},
+    {"read", read, 0, 0, 0},
     {"seal", seal, 0, 0, 0},
     {0, 0, 0, 0, 0}
 };

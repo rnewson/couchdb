@@ -20,6 +20,11 @@ var State = {
     gc();
     print("true"); // indicates success
   },
+  addAtt : function(name, len, md5) {
+    print("[true, \"send\"]");
+    State.lib[name.split(".")[0]] = read(len);
+    print("true");
+  },
   addFun : function(newFun) {
     // Compile to a function and add it to funs array
     State.funs.push(Couch.compileFunction(newFun, {views : {lib : State.lib}}));

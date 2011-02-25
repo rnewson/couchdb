@@ -209,12 +209,11 @@ view_insert_doc_query_results(#doc{id=DocId}=Doc, [ResultKVs|RestResults], [{Vie
 
 view_compute(Group, []) ->
     {Group, []};
-view_compute(#group{def_lang=DefLang, lib=Lib, query_server=QueryServerIn}=Group, Docs) ->
+view_compute(#group{query_server=QueryServerIn}=Group, Docs) ->
     {ok, QueryServer} =
     case QueryServerIn of
     nil -> % doc map not started
-        Definitions = [View#view.def || View <- Group#group.views],
-        couch_query_servers:start_doc_map(DefLang, Definitions, Lib);
+        couch_query_servers:start_doc_map(Group);
     _ ->
         {ok, QueryServerIn}
     end,

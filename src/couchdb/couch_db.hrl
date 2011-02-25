@@ -221,6 +221,7 @@
     design_options=[],
     views,
     lib,
+    atts,
     id_btree=nil,
     current_seq=0,
     purge_seq=0,

@@ -16,7 +16,7 @@
 -export([start_link/0, config_change/1]).
 
 -export([init/1, terminate/2, handle_call/3, handle_cast/2, handle_info/2,code_change/3]).
--export([start_doc_map/3, map_docs/2, stop_doc_map/1]).
+-export([start_doc_map/1, map_docs/2, stop_doc_map/1]).
 -export([reduce/3, rereduce/3,validate_doc_update/5]).
 -export([filter_docs/5]).
 -export([filter_view/3]).
@@ -33,7 +33,8 @@
     ddoc_keys = [],
     prompt_fun,
     set_timeout_fun,
-    stop_fun
+    stop_fun,
+    data_fun
 }).
 
 -record(qserver, {
@@ -48,16 +49,25 @@
 start_link() ->
     gen_server:start_link({local, couch_query_servers}, couch_query_servers, [], []).
 
-start_doc_map(Lang, Functions, Lib) ->
+start_doc_map(#group{def_lang=Lang, views=Views, lib=Lib, atts=Atts}) ->
     Proc = get_os_process(Lang),
     case Lib of
     {[]} -> ok;
     Lib ->
         true = proc_prompt(Proc, [<<"add_lib">>, Lib])
     end,
+    lists:foreach(fun(#att{name=Name,disk_len=Len,md5=Md5}=Att) ->
+        case proc_prompt(Proc, [<<"add_att">>, Name, Len, ?l2b(couch_util:to_hex(Md5))]) of
+            [true, <<"send">>] ->
+                Data = couch_doc:att_foldl_decode(Att, fun(Chunk, Acc) -> [Chunk | Acc] end, []),
+                true = proc_data(Proc, lists:reverse(Data));
+            true ->
+                ok %% view server declined transfer.
+        end
+    end, Atts),
     lists:foreach(fun(FunctionSource) ->
         true = proc_prompt(Proc, [<<"add_fun">>, FunctionSource])
-    end, Functions),
+    end, [View#view.def || View <- Views]),
     {ok, Proc}.
 
 map_docs(Proc, Docs) ->
@@ -467,7 +477,8 @@ new_process(Langs, LangLimits, Lang) ->
                        % Called via proc_prompt, proc_set_timeout, and proc_stop
                        prompt_fun={Mod, prompt},
                        set_timeout_fun={Mod, set_timeout},
-                       stop_fun={Mod, stop}}};
+                       stop_fun={Mod, stop},
+                       data_fun={Mod, data}}};
         _ ->
             {unknown_query_language, Lang}
         end;
@@ -503,6 +514,10 @@ proc_stop(Proc) ->
 proc_set_timeout(Proc, Timeout) ->
     {Mod, Func} = Proc#proc.set_timeout_fun,
     apply(Mod, Func, [Proc#proc.pid, Timeout]).
+
+proc_data(Proc, Data) ->
+    {Mod, Func} = Proc#proc.data_fun,
+    apply(Mod, Func, [Proc#proc.pid, Data]).
 
 teach_ddoc(DDoc, {DDocId, _Rev}=DDocKey, #proc{ddoc_keys=Keys}=Proc) ->
     % send ddoc over the wire
