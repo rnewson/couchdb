@@ -13,11 +13,7 @@
 % License for the specific language governing permissions and limitations under
 % the License.
 
--record(user_ctx, {
-    name = null,
-    roles = [],
-    handler
-}).
+-include("$INCDIR/couch_db.hrl").
 
 test_db_name() ->
     <<"couch_test_invalid_view_seq">>.

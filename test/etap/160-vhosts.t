@@ -13,33 +13,7 @@
 % License for the specific language governing permissions and limitations under
 % the License.
 
-%% XXX: Figure out how to -include("couch_rep.hrl")
--record(http_db, {
-    url,
-    auth = [],
-    resource = "",
-    headers = [
-        {"User-Agent", "CouchDB/"++couch_server:get_version()},
-        {"Accept", "application/json"},
-        {"Accept-Encoding", "gzip"}
-    ],
-    qs = [],
-    method = get,
-    body = nil,
-    options = [
-        {response_format,binary},
-        {inactivity_timeout, 30000}
-    ],
-    retries = 10,
-    pause = 1,
-    conn = nil
-}).
-
--record(user_ctx, {
-    name = null,
-    roles = [],
-    handler
-}).
+-include("$INCDIR/couch_db.hrl").
 
 server() ->
     lists:concat([

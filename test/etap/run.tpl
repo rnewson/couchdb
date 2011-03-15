@@ -15,6 +15,7 @@
 SRCDIR="%abs_top_srcdir%"
 BUILDIR="%abs_top_builddir%"
 
+export INCDIR="$SRCDIR/src/couchdb"
 export ERL_FLAGS="$ERL_FLAGS -pa $BUILDIR/test/etap/"
 
 if test $# -gt 0; then

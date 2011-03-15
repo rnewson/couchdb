@@ -13,16 +13,7 @@
 % License for the specific language governing permissions and limitations under
 % the License.
 
--record(daemon, {
-    port,
-    name,
-    cmd,
-    kill,
-    status=running,
-    cfg_patterns=[],
-    errors=[],
-    buf=[]
-}).
+-include("$INCDIR/couch_db.hrl").
 
 config_files() ->
     lists:map(fun test_util:build_file/1, [
