@@ -1,0 +1,81 @@
+% Licensed under the Apache License, Version 2.0 (the "License"); you may not
+% use this file except in compliance with the License. You may obtain a copy of
+% the License at
+%
+%   http://www.apache.org/licenses/LICENSE-2.0
+%
+% Unless required by applicable law or agreed to in writing, software
+% distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+% WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+% License for the specific language governing permissions and limitations under
+% the License.
+
+-module(pbkdf2).
+
+-export([hash_password/4,test/0]).
+-define(MAX_DERIVED_KEY_LENGTH, (1 bsl 32 -1)).
+-define(SHA1_OUTPUT_LENGTH, 20).
+
+-spec hash_password(binary(), binary(), integer(), integer()) -> {ok, binary()}.
+hash_password(Password, Salt, Iterations, DerivedLength) ->
+    L = ceiling(DerivedLength / ?SHA1_OUTPUT_LENGTH),
+    %%R = DerivedLength - (L - 1) * ?SHA1_OUTPUT_LENGTH,
+    couch_util:to_hex(iolist_to_binary(hash_password1(Password, Salt, Iterations, L))).
+
+hash_password1(Password, Salt, Iterations, BlockCount) ->
+    hash_password2(Password, Salt, Iterations, BlockCount, 0, []).
+
+hash_password2(_Password, _Salt, _Iterations, Block, Block, Acc) ->
+    lists:reverse(Acc);
+hash_password2(Password, Salt, Iterations, BlockCount, BlockIndex, Acc) ->
+    T = hash_password3(Password, Salt, Iterations, BlockIndex),
+    hash_password2(Password, Salt, Iterations, BlockCount, BlockIndex + 1, [T|Acc]).
+
+hash_password3(Password, Salt, Iterations, BlockIndex) ->
+    hash_password4(Password, Salt, Iterations, BlockIndex, 1,
+                   crypto:sha_mac(Password, <<Salt/binary,(BlockIndex+1):32/integer>>)).
+
+hash_password4(_Password, _Salt, Iteration, _BlockIndex, Iteration, Acc) ->
+    Acc;
+hash_password4(Password, Salt, Iterations, BlockIndex, Iteration, Acc) ->
+    hash_password4(Password, Salt, Iterations, BlockIndex, Iteration + 1,
+                   do_bxor(Acc, crypto:sha_mac(Password, Acc))).
+
+ceiling(X) ->
+    T = erlang:trunc(X),
+    case (X - T) of
+        Neg when Neg < 0 -> T;
+        Pos when Pos > 0 -> T + 1;
+        _ -> T
+    end.
+
+do_bxor(B1, B2) when is_binary(B1), is_binary(B2) ->
+    list_to_binary(do_bxor(binary_to_list(B1), binary_to_list(B2)));
+do_bxor(L1, L2) when is_list(L1), is_list(L2) ->
+    do_bxor(lists:reverse(L1), lists:reverse(L2), []).
+
+do_bxor([], L2, Ret) ->
+    lists:reverse(L2) ++ Ret;
+do_bxor(L1, [], Ret) ->
+    lists:reverse(L1) ++ Ret;
+do_bxor([I1|Rest1], [I2|Rest2], Acc) ->
+    do_bxor(Rest1, Rest2, [I1 bxor I2|Acc]).
+
+test() ->
+    assertEqual("0c60c80f961f0e71f3a9b524af6012062fe037a6",
+                hash_password(<<"password">>, <<"salt">>, 1, 20)),
+    assertEqual("ea6c014dc72d6f8ccd1ed92ace1d41f0d8de8957",
+                hash_password(<<"password">>, <<"salt">>, 2, 20)),
+    assertEqual("4b007901b765489abead49d926f721d065a429c1",
+                hash_password(<<"password">>, <<"salt">>, 4096, 20)),
+    assertEqual("eefe3d61cd4da4e4e9945b3d6ba2158c2634e984",
+                hash_password(<<"password">>, <<"salt">>, 16777216, 20)),
+    assertEqual("3d2eec4fe41c849b80c8d83662c0e44a8b291a964cf2f07038",
+                hash_password(<<"passwordPASSWORDpassword">>, <<"saltSALTsaltSALTsaltSALTsaltSALTsalt">>,
+                              4096, 20)),
+    finished.
+
+assertEqual(Expected, Expected) ->
+    io:format("ok~n",[]);
+assertEqual(Expected, Actual) ->
+    io:format("error! expected;~n~w~n but got;~n~w~n~n", [Expected, Actual]).
