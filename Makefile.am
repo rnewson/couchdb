@@ -147,3 +147,21 @@ distsign: distcheck check
 	    > $(top_srcdir)/$(distdir).tar.gz.md5
 	sha1sum $(top_srcdir)/$(distdir).tar.gz \
 	    > $(top_srcdir)/$(distdir).tar.gz.sha
+
+build_plt:
+	dialyzer --build_plt --output_plt .couch_plt	--apps \
+		crypto\
+	 	erts\
+	 	eunit\
+	 	inets\
+	 	kernel\
+	 	public_key\
+	 	sasl\
+	 	ssl\
+	 	stdlib\
+	 	syntax_tools\
+	 	tools\
+	 	xmerl
+
+dialyzer:
+	dialyzer --plt .couch_plt --src -r src

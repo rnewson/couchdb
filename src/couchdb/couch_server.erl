@@ -16,7 +16,7 @@
 -export([open/2,create/2,delete/2,all_databases/0,get_version/0]).
 -export([init/1, handle_call/3,sup_start_link/0]).
 -export([handle_cast/2,code_change/3,handle_info/2,terminate/2]).
--export([dev_start/0,is_admin/2,has_admins/0,get_stats/0]).
+-export([dev_start/0,has_admins/0,get_stats/0]).
 
 -include("couch_db.hrl").
 
@@ -27,6 +27,8 @@
     dbs_open=0,
     start_time=""
     }).
+
+-define(ITERATIONS, 200000).
 
 dev_start() ->
     couch:stop(),
@@ -84,15 +86,6 @@ check_dbname(#server{dbname_regexp=RegExp}, DbName) ->
         ok
     end.
 
-is_admin(User, ClearPwd) ->
-    case couch_config:get("admins", User) of
-    "-hashed-" ++ HashedPwdAndSalt ->
-        [HashedPwd, Salt] = string:tokens(HashedPwdAndSalt, ","),
-        couch_util:to_hex(crypto:sha(ClearPwd ++ Salt)) == HashedPwd;
-    _Else ->
-        false
-    end.
-
 has_admins() ->
     couch_config:get("admins") /= [].
 
@@ -106,11 +99,14 @@ hash_admin_passwords(Persist) ->
     lists:foreach(
         fun({_User, "-hashed-" ++ _}) ->
             ok; % already hashed
+        ({_User, "-pbkdf2-" ++ _}) ->
+            ok; % already hashed
         ({User, ClearPassword}) ->
-            Salt = ?b2l(couch_uuids:random()),
-            Hashed = couch_util:to_hex(crypto:sha(ClearPassword ++ Salt)),
+            Salt = couch_uuids:random(),
+            Hashed = couch_passwords:pbkdf2(ClearPassword, Salt, ?ITERATIONS),
             couch_config:set("admins",
-                User, "-hashed-" ++ Hashed ++ "," ++ Salt, Persist)
+                User, "-pbkdf2-" ++ ?b2l(Hashed) ++ "," ++ ?b2l(Salt) ++
+                                 "," ++ integer_to_list(?ITERATIONS), Persist)
         end, couch_config:get("admins")).
 
 init([]) ->

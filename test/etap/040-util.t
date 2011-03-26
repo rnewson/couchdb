@@ -66,15 +66,15 @@ test() ->
         "Checking to flush invokes GC."),
 
     % verify
-    etap:is(true, couch_util:verify("It4Vooya", "It4Vooya"),
+    etap:is(true, couch_passwords:verify("It4Vooya", "It4Vooya"),
          "String comparison."),
-    etap:is(false, couch_util:verify("It4VooyaX", "It4Vooya"),
+    etap:is(false, couch_passwords:verify("It4VooyaX", "It4Vooya"),
          "String comparison (unequal lengths)."),
-    etap:is(true, couch_util:verify(<<"ahBase3r">>, <<"ahBase3r">>),
+    etap:is(true, couch_passwords:verify(<<"ahBase3r">>, <<"ahBase3r">>),
         "Binary comparison."),
-    etap:is(false, couch_util:verify(<<"ahBase3rX">>, <<"ahBase3r">>),
+    etap:is(false, couch_passwords:verify(<<"ahBase3rX">>, <<"ahBase3r">>),
         "Binary comparison (unequal lengths)."),
-    etap:is(false, couch_util:verify(nil, <<"ahBase3r">>),
+    etap:is(false, couch_passwords:verify(nil, <<"ahBase3r">>),
         "Binary comparison with atom."),
 
     ok.

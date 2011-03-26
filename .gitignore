@@ -97,3 +97,6 @@ couchdb.stdout
 
 cover/*
 INSTALL
+
+# for dialyzer
+.couch_plt

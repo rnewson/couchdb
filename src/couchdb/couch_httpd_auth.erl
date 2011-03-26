@@ -69,10 +69,7 @@ default_authentication_handler(Req) ->
             nil ->
                 throw({unauthorized, <<"Name or password is incorrect.">>});
             UserProps ->
-                UserSalt = couch_util:get_value(<<"salt">>, UserProps, <<>>),
-                PasswordHash = hash_password(?l2b(Pass), UserSalt),
-                ExpectedHash = couch_util:get_value(<<"password_sha">>, UserProps, nil),
-                case couch_util:verify(ExpectedHash, PasswordHash) of
+                case authenticate(?l2b(Pass), UserProps) of
                     true ->
                         Req#httpd{user_ctx=#user_ctx{
                             name=?l2b(User),
@@ -189,7 +186,7 @@ cookie_authentication_handler(#httpd{mochi_req=MochiReq}=Req) ->
                 ?LOG_DEBUG("timeout ~p", [Timeout]),
                 case (catch erlang:list_to_integer(TimeStr, 16)) of
                     TimeStamp when CurrentTime < TimeStamp + Timeout ->
-                        case couch_util:verify(ExpectedHash, Hash) of
+                        case couch_passwords:verify(ExpectedHash, Hash) of
                             true ->
                                 TimeLeft = TimeStamp + Timeout - CurrentTime,
                                 ?LOG_DEBUG("Successful cookie auth as: ~p", [User]),
@@ -234,9 +231,6 @@ cookie_auth_cookie(Req, User, Secret, TimeStamp) ->
         couch_util:encodeBase64Url(SessionData ++ ":" ++ ?b2l(Hash)),
         [{path, "/"}, cookie_scheme(Req)]).
 
-hash_password(Password, Salt) ->
-    ?l2b(couch_util:to_hex(crypto:sha(<<Password/binary, Salt/binary>>))).
-
 ensure_cookie_auth_secret() ->
     case couch_config:get("couch_httpd_auth", "secret", nil) of
         nil ->
@@ -270,9 +264,7 @@ handle_session_req(#httpd{method='POST', mochi_req=MochiReq}=Req) ->
         Result -> Result
     end,
     UserSalt = couch_util:get_value(<<"salt">>, User, <<>>),
-    PasswordHash = hash_password(Password, UserSalt),
-    ExpectedHash = couch_util:get_value(<<"password_sha">>, User, nil),
-    case couch_util:verify(ExpectedHash, PasswordHash) of
+    case authenticate(Password, User) of
         true ->
             % setup the session cookie
             Secret = ?l2b(ensure_cookie_auth_secret()),
@@ -351,3 +343,17 @@ cookie_scheme(#httpd{mochi_req=MochiReq}) ->
         http -> {http_only, true};
         https -> {secure, true}
     end.
+
+authenticate(Pass, UserProps) ->
+    UserSalt = couch_util:get_value(<<"salt">>, UserProps, <<>>),
+    case couch_util:get_value(<<"password_scheme">>, UserProps, <<"simple">>) of
+        <<"simple">> ->
+            PasswordHash = couch_passwords:simple(Pass, UserSalt),
+            ExpectedHash = couch_util:get_value(<<"password_sha">>, UserProps, nil);
+        <<"pbkdf2">> ->
+            Iterations = couch_util:get_value(<<"iterations">>, UserProps, 1),
+            PasswordHash = couch_passwords:pbkdf2(Pass, UserSalt, Iterations),
+            ExpectedHash = couch_util:get_value(<<"derived_key">>, UserProps, nil)
+    end,
+    couch_passwords:verify(ExpectedHash, PasswordHash).
+
