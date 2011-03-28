@@ -34,8 +34,8 @@ pbkdf2(_Password, _Salt, _Iterations, DerivedLength) when DerivedLength > ?MAX_D
     {error, derived_key_too_long};
 pbkdf2(Password, Salt, Iterations, DerivedLength) ->
     L = ceiling(DerivedLength / ?SHA1_OUTPUT_LENGTH),
-    Bin = iolist_to_binary(pbkdf2(Password, Salt, Iterations, L, 1, [])),
-    {ok, ?l2b(couch_util:to_hex(binary:part(Bin, {0, DerivedLength})))}.
+    <<Bin:DerivedLength/binary,_/binary>> = iolist_to_binary(pbkdf2(Password, Salt, Iterations, L, 1, [])),
+    {ok, ?l2b(couch_util:to_hex(Bin))}.
 
 -spec pbkdf2(binary(), binary(), integer(), integer(), integer(), iolist()) -> iolist().
 pbkdf2(_Password, _Salt, _Iterations, BlockCount, BlockIndex, Acc) when BlockIndex > BlockCount ->
