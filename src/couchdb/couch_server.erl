@@ -28,7 +28,7 @@
     start_time=""
     }).
 
--define(ITERATIONS, 200000).
+-define(ITERATIONS, 1000000).
 
 dev_start() ->
     couch:stop(),
