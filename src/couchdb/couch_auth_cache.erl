@@ -391,12 +391,22 @@ ensure_auth_ddoc_exists(Db, DDocId) ->
     case couch_db:open_doc(Db, DDocId) of
     {not_found, _Reason} ->
         {ok, AuthDesign} = auth_design_doc(DDocId),
-        {ok, _Rev} = couch_db:update_doc(Db, AuthDesign, []);
-    _ ->
-        ok
+        {ok, _Rev} =
+                couch_db:update_doc(Db, AuthDesign, []);
+    {ok, #doc{body={Props}}=Doc} ->
+          case couch_util:get_value(<<"validate_doc_update">>, Props, []) of
+              ?AUTH_DB_DOC_VALIDATE_FUNCTION ->
+                  ok;
+              _ ->
+                  couch_db:update_doc(Db, auth_design_doc(Doc), [])
+          end
     end,
     ok.
 
+auth_design_doc(#doc{body={Props}}=Doc) ->
+    Props1 = lists:keyreplace(<<"validate_doc_update">>, 1, Props,
+                              {<<"validate_doc_update">>, ?AUTH_DB_DOC_VALIDATE_FUNCTION}),
+    Doc#doc{body={Props1}};
 auth_design_doc(DocId) ->
     DocProps = [
         {<<"_id">>, DocId},
