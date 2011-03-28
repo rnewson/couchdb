@@ -52,9 +52,8 @@ pbkdf2(Password, Salt, Iterations, BlockIndex, 1, _Prev, _Acc) ->
     pbkdf2(Password, Salt, Iterations, BlockIndex, 2, InitialBlock, InitialBlock);
 pbkdf2(Password, Salt, Iterations, BlockIndex, Iteration, Prev, Acc) ->
     Next = crypto:sha_mac(Password, Prev),
-    Xor = list_to_binary([X bxor Y || {X, Y} <- lists:zip(binary_to_list(Acc), binary_to_list(Next))]),
     pbkdf2(Password, Salt, Iterations, BlockIndex, Iteration + 1,
-                   Next, Xor).
+                   Next, crypto:exor(Next, Acc)).
 
 %% verify two lists for equality without short-circuits to avoid timing attacks.
 -spec verify(string(), string(), integer()) -> boolean().
