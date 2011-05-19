@@ -95,7 +95,8 @@ handle_call({purge_docs, IdRevs}, _From, Db) ->
 
     NewDocInfos = lists:zipwith(
         fun({_Id, Revs}, {ok, #full_doc_info{rev_tree=Tree}=FullDocInfo}) ->
-            case couch_key_tree:remove_leafs(Tree, Revs) of
+            case couch_key_tree:remove_leafs(Tree, Revs,
+                            fun couch_doc:kt_value_chooser/2) of
             {_, []=_RemovedRevs} -> % no change
                 nil;
             {NewTree, RemovedRevs} ->
@@ -500,7 +501,7 @@ merge_rev_trees(Limit, MergeConflicts, [NewDocs|RestDocsList],
         fun({Client, #doc{revs={Pos,[_Rev|PrevRevs]}}=NewDoc}, AccTree) ->
             if not MergeConflicts ->
                 case couch_key_tree:merge(AccTree, couch_db:doc_to_tree(NewDoc),
-                    Limit) of
+                    fun couch_doc:kt_value_chooser/2, Limit) of
                 {_NewTree, conflicts} when (not OldDeleted) ->
                     send_result(Client, Id, {Pos-1,PrevRevs}, conflict),
                     AccTree;
@@ -531,7 +532,8 @@ merge_rev_trees(Limit, MergeConflicts, [NewDocs|RestDocsList],
                                 NewDoc#doc{revs={OldPos, [OldRev]}}),
                         NewDoc2 = NewDoc#doc{revs={OldPos + 1, [NewRevId, OldRev]}},
                         {NewTree2, _} = couch_key_tree:merge(AccTree,
-                                couch_db:doc_to_tree(NewDoc2), Limit),
+                                couch_db:doc_to_tree(NewDoc2),
+                                fun couch_doc:kt_value_chooser/2, Limit),
                         % we changed the rev id, this tells the caller we did
                         send_result(Client, Id, {Pos-1,PrevRevs},
                                 {ok, {OldPos + 1, NewRevId}}),
@@ -545,7 +547,8 @@ merge_rev_trees(Limit, MergeConflicts, [NewDocs|RestDocsList],
                 end;
             true ->
                 {NewTree, _} = couch_key_tree:merge(AccTree,
-                            couch_db:doc_to_tree(NewDoc), Limit),
+                            couch_db:doc_to_tree(NewDoc),
+                            fun couch_doc:kt_value_chooser/2, Limit),
                 NewTree
             end
         end,
@@ -578,7 +581,8 @@ new_index_entries([FullDocInfo|RestInfos], AccById, AccBySeq) ->
 
 
 stem_full_doc_infos(#db{revs_limit=Limit}, DocInfos) ->
-    [Info#full_doc_info{rev_tree=couch_key_tree:stem(Tree, Limit)} ||
+    [Info#full_doc_info{rev_tree=couch_key_tree:stem(Tree, Limit,
+                fun couch_doc:kt_value_chooser/2)} ||
             #full_doc_info{rev_tree=Tree}=Info <- DocInfos].
 
 update_docs_int(Db, DocsList, NonRepDocs, MergeConflicts, FullCommit) ->
