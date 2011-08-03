@@ -209,6 +209,9 @@ update_sequence_lists(Seq, State) ->
         opened_seqs = Opened
     }.
 
+
+open_doc_revs(#http_db{url = Url} = DbS, <<>>, Revs) ->
+    [];
 open_doc_revs(#http_db{url = Url} = DbS, DocId, Revs) ->
     %% all this logic just splits up revision lists that are too long for
     %% MochiWeb into multiple requests

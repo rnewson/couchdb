@@ -172,7 +172,10 @@ process_response({ok, Status, Headers, Body}, Req) ->
     Code =:= 409 ->
         throw(conflict);
     Code >= 400, Code < 500 ->
-        ?JSON_DECODE(maybe_decompress(Headers, Body));
+        case Body of
+            <<>> -> {[{error, <<"bad_request">>}]};
+            _ -> ?JSON_DECODE(maybe_decompress(Headers, Body))
+        end;
     Code =:= 500; Code =:= 502; Code =:= 503 ->
         #http_db{pause = Pause, retries = Retries} = Req,
         ?LOG_INFO("retrying couch_rep_httpc request in ~p seconds " ++
