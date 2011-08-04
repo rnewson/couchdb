@@ -52,13 +52,20 @@ open(Fd, Encoding, Options) ->
 close(Pid) ->
     gen_server:call(Pid, close, infinity).
 
-copy_to_new_stream(Fd, PosList, DestFd) ->
-    {ok, Dest} = open(DestFd),
+copy_to_new_stream(Fd, PosList, Fd) ->
+    {ok, Dest} = open(Fd),
     foldl(Fd, PosList,
         fun(Bin, _) ->
             ok = write(Dest, Bin)
         end, ok),
-    close(Dest).
+    close(Dest);
+copy_to_new_stream(Fd, PosList, DestFd) ->
+    case couch_file:append_poslist(DestFd, Fd, PosList) of
+        {ok, Pos, Size, Md5} ->
+            {[{Pos, Size}], Size, Size, Md5, <<>>};
+        Else ->
+            Else
+    end.
 
 foldl(_Fd, [], _Fun, Acc) ->
     Acc;

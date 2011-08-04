@@ -28,6 +28,7 @@
 -export([append_binary/2, append_binary_md5/2]).
 -export([append_raw_chunk/2, assemble_file_chunk/1, assemble_file_chunk/2]).
 -export([append_term/2, append_term/3, append_term_md5/2, append_term_md5/3]).
+-export([append_poslist/3]).
 -export([write_header/2, read_header/1]).
 -export([delete/2, delete/3, init_delete_dir/1]).
 
@@ -115,6 +116,9 @@ assemble_file_chunk(Bin) ->
 
 assemble_file_chunk(Bin, Md5) ->
     [<<1:1/integer, (iolist_size(Bin)):31/integer>>, Md5, Bin].
+
+append_poslist(Fd, FromFd, PosList) when Fd =/= FromFd ->
+    gen_server:call(Fd, {append_poslist, FromFd, PosList}, infinity).
 
 %%----------------------------------------------------------------------
 %% Purpose: Reads a term from a file that was written with append_term
@@ -360,6 +364,14 @@ handle_call({append_bin, Bin}, _From, #file{fd = Fd, eof = Pos} = File) ->
         {reply, Error, File}
     end;
 
+handle_call({append_poslist, FromFd, PosList}, _From, #file{fd = ToFd, eof = Pos} = File) ->
+    case handle_poslist(FromFd, ToFd, PosList) of
+        {ok, Size, Md5} ->
+            {reply, {ok, Pos, Size, Md5}, File#file{eof = Pos + Size}};
+        Error ->
+            {reply, Error, File}
+    end;
+
 handle_call({write_header, Bin}, _From, #file{fd = Fd, eof = Pos} = File) ->
     BinSize = byte_size(Bin),
     case Pos rem ?SIZE_BLOCK of
@@ -504,3 +516,21 @@ split_iolist([Sublist| Rest], SplitAt, BeginAcc) when is_list(Sublist) ->
     end;
 split_iolist([Byte | Rest], SplitAt, BeginAcc) when is_integer(Byte) ->
     split_iolist(Rest, SplitAt - 1, [Byte | BeginAcc]).
+
+handle_poslist(FromFd, ToFd, PosList) ->
+    handle_poslist(FromFd, ToFd, PosList, 0, couch_util:md5_init()).
+
+handle_poslist(_FromFd, _ToFd, [], Size, Md5) ->
+    {ok, Size, couch_util:md5_final(Md5)};
+handle_poslist(FromFd, ToFd, [{Pos,_}|Rest], Size, Md5) ->
+    handle_poslist(FromFd, ToFd, [Pos|Rest], Size, Md5);
+handle_poslist(FromFd, ToFd, [Pos|Rest], Size, Md5) ->
+    {ok, Bin} = pread_iolist(FromFd, Pos),
+    case file:write(ToFd, Bin) of
+        ok ->
+            handle_poslist(FromFd, ToFd, Rest,
+                           Size + iolist_size(Bin),
+                          couch_util:md5_update(Md5, Bin));
+        Error ->
+            Error
+    end.
