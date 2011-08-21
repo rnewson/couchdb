@@ -207,8 +207,24 @@ handle_cast({compact_done, CompactFilepath}, #db{filepath=Filepath}=Db) ->
         Pid = spawn_link(fun() -> start_copy_compact(Db) end),
         Db2 = Db#db{compactor_pid=Pid},
         {noreply, Db2}
-    end.
+    end;
 
+handle_cast({restore_done, RestoreFilepath}, #db{filepath=Filepath}=Db) ->
+    {ok, NewFd} = couch_file:open(RestoreFilepath),
+    ReaderFd = open_reader_fd(RestoreFilepath, Db#db.options),
+    {ok, NewHeader} = couch_file:read_header(NewFd),
+    NewDb =
+        init_db(Db#db.name, Filepath, NewFd, ReaderFd, NewHeader, Db#db.options),
+    unlink(NewFd),
+    RootDir = couch_config:get("couchdb", "database_dir", "."),
+    couch_file:delete(RootDir, Filepath),    
+    ok = file:rename(RestoreFilepath, Filepath),
+    close_db(Db),
+    NewDb2 = refresh_validate_doc_funs(NewDb),
+    ok = gen_server:call(Db#db.main_pid, {db_updated, NewDb2}, infinity),
+    couch_db_update_notifier:notify({restored, NewDb2#db.name}),
+    ?LOG_INFO("Restoration of db \"~s\" completed.", [Db#db.name]),
+    {noreply, NewDb2}.
 
 handle_info({update_docs, Client, GroupedDocs, NonRepDocs, MergeConflicts,
         FullCommit}, Db) ->

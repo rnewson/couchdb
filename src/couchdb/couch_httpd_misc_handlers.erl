@@ -18,7 +18,7 @@
     handle_task_status_req/1]).
 
 -export([increment_update_seq_req/2]).
-
+-export([handle_dump_req/2, handle_restore_req/2]).
 
 -include("couch_db.hrl").
 
@@ -251,4 +251,49 @@ handle_log_req(#httpd{method='GET'}=Req) ->
 handle_log_req(Req) ->
     send_method_not_allowed(Req, "GET").
 
+handle_dump_req(#httpd{method='GET'}=Req, #db{filepath=FilePath}) ->
+    ok = couch_httpd:verify_is_server_admin(Req),
+    {ok, Fd} = file:open(FilePath, [read, binary, raw]),
+    {ok, Length} = file:position(Fd, eof),
+    {ok, Resp} = couch_httpd:start_response_length(Req, 200,
+        [{"Content-Type", "application/octet-stream"}], Length),
+    send_file(Resp, Fd, 0, Length),
+    ok = file:close(Fd),
+    {ok, Resp};
+handle_dump_req(Req, _Db) ->
+    send_method_not_allowed(Req, "GET").
 
+handle_restore_req(#httpd{method='PUT'}=Req, #db{filepath=FilePath}=Db) ->
+    ok = couch_httpd:verify_is_server_admin(Req),
+    case couch_httpd:body_length(Req) of
+    undefined ->
+        throw(length_required);
+    Length ->
+        RestoreFile = FilePath ++ ".restore",
+        {ok, Fd} = file:open(RestoreFile, [write, binary, raw]),
+        receive_file(Req, Fd, Length),
+        ok = file:close(Fd),
+        gen_server:cast(Db#db.update_pid, {restore_done, RestoreFile}),
+        send_json(Req, 201, [], {[{ok, true}]})
+    end;
+handle_restore_req(Req, _Db) ->
+    send_method_not_allowed(Req, "PUT").
+
+send_file(Resp, Fd, Offset, Remaining) ->
+    case file:pread(Fd, Offset, erlang:min(128*1024, Remaining)) of
+    eof -> ok;
+    {ok, Bytes} ->        
+        Size = iolist_size(Bytes),
+        couch_httpd:send(Resp, Bytes),
+        send_file(Resp, Fd, Offset + Size, Remaining - Size)
+    end.
+
+receive_file(Req, Fd, 0) ->
+    ok;
+receive_file(Req, Fd, Remaining) when Remaining > 0 ->
+    Bytes = couch_httpd:recv(Req, erlang:min(128*1024, Remaining)),
+    Size = iolist_size(Bytes),
+    ok = file:write(Fd, Bytes),
+    receive_file(Req, Fd, Remaining - Size).
+
+    

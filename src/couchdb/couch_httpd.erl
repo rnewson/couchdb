@@ -786,6 +786,9 @@ error_info({forbidden, Msg}) ->
     {403, <<"forbidden">>, Msg};
 error_info({unauthorized, Msg}) ->
     {401, <<"unauthorized">>, Msg};
+error_info(length_required) ->
+    {411, <<"length_required">>, <<"The server refuses to accept the request "
+    "without a defined Content-Length.">>};
 error_info(file_exists) ->
     {412, <<"file_exists">>, <<"The database could not be "
         "created, the file already exists.">>};
