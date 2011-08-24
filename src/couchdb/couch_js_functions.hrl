@@ -45,6 +45,10 @@
             if (oldDoc.name !== newDoc.name) {
                 throw({forbidden: 'Usernames can not be changed.'});
             }
+            if (oldDoc.password_scheme === 'pbkdf2' &&
+                newDoc.password_scheme !== 'pbkdf2') {
+                throw({forbidden: 'password scheme cannot be downgraded.'});
+            }
         }
 
         if (newDoc.password_sha && !newDoc.salt) {
@@ -52,6 +56,24 @@
                 forbidden: 'Users with password_sha must have a salt.' +
                     'See /_utils/script/couch.js for example code.'
             });
+        }
+
+        if (newDoc.password_scheme === 'pbkdf2') {
+            if (!newDoc.derived_key) {
+                throw({
+                    forbidden: 'Users using pbkdf2 must have a derived_key property.'
+                });
+            }
+            if (!newDoc.salt) {
+                throw({
+                    forbidden: 'Users using pbkdf2 must have a salt property.'
+                });
+            }
+            if (!newDoc.iterations) {
+                throw({
+                    forbidden: 'Users using pbkdf2 must have an iterations property.'
+                });
+            }
         }
 
         if (userCtx.roles.indexOf('_admin') === -1) {

@@ -48,20 +48,35 @@ get_user_creds(UserName) ->
         [HashedPwd, Salt] = string:tokens(HashedPwdAndSalt, ","),
         case get_from_cache(UserName) of
         nil ->
-            [{<<"roles">>, [<<"_admin">>]},
-                {<<"salt">>, ?l2b(Salt)},
-                {<<"password_sha">>, ?l2b(HashedPwd)}];
+            make_admin_doc(HashedPwd, Salt, [<<"_admin">>]);
         UserProps when is_list(UserProps) ->
-            DocRoles = couch_util:get_value(<<"roles">>, UserProps),
-            [{<<"roles">>, [<<"_admin">> | DocRoles]},
-                {<<"salt">>, ?l2b(Salt)},
-                {<<"password_sha">>, ?l2b(HashedPwd)}]
+            make_admin_doc(HashedPwd, Salt, couch_util:get_value(<<"roles">>, UserProps))
+        end;
+    "-pbkdf2-" ++ HashedPwdSaltAndIterations ->
+        [HashedPwd, Salt, Iterations] = string:tokens(HashedPwdSaltAndIterations, ","),
+        case get_from_cache(UserName) of
+        nil ->
+            make_admin_doc(HashedPwd, Salt, Iterations, [<<"_admin">>]);
+        UserProps when is_list(UserProps) ->
+            make_admin_doc(HashedPwd, Salt, Iterations, couch_util:get_value(<<"roles">>, UserProps))
         end;
     _Else ->
         get_from_cache(UserName)
     end,
     validate_user_creds(UserCreds).
 
+make_admin_doc(HashedPwd, Salt, Roles) ->
+    [{<<"roles">>, Roles},
+     {<<"salt">>, ?l2b(Salt)},
+     {<<"password_scheme">>, <<"simple">>},
+     {<<"password_sha">>, ?l2b(HashedPwd)}].
+
+make_admin_doc(DerivedKey, Salt, Iterations, Roles) ->
+    [{<<"roles">>, Roles},
+     {<<"salt">>, ?l2b(Salt)},
+     {<<"iterations">>, list_to_integer(Iterations)},
+     {<<"password_scheme">>, <<"pbkdf2">>},
+     {<<"derived_key">>, ?l2b(DerivedKey)}].
 
 get_from_cache(UserName) ->
     exec_if_auth_db(
@@ -395,13 +410,13 @@ ensure_auth_ddoc_exists(Db, DDocId) ->
     {ok, Doc} ->
         {Props} = couch_doc:to_json_obj(Doc, []),
         case couch_util:get_value(<<"validate_doc_update">>, Props, []) of
-            ?AUTH_DB_DOC_VALIDATE_FUNCTION ->
-                ok;
-            _ ->
-                Props1 = lists:keyreplace(<<"validate_doc_update">>, 1, Props,
-                    {<<"validate_doc_update">>,
-                    ?AUTH_DB_DOC_VALIDATE_FUNCTION}),
-                couch_db:update_doc(Db, couch_doc:from_json_obj({Props1}), [])
+        ?AUTH_DB_DOC_VALIDATE_FUNCTION ->
+            ok;
+        _ ->
+            Props1 = lists:keyreplace(<<"validate_doc_update">>, 1, Props,
+                {<<"validate_doc_update">>,
+                ?AUTH_DB_DOC_VALIDATE_FUNCTION}),
+            couch_db:update_doc(Db, couch_doc:from_json_obj({Props1}), [])
         end
     end,
     ok.

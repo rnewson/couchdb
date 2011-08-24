@@ -340,9 +340,14 @@ CouchDB.user_prefix = "org.couchdb.user:";
 CouchDB.prepareUserDoc = function(user_doc, new_password) {
   user_doc._id = user_doc._id || CouchDB.user_prefix + user_doc.name;
   if (new_password) {
-    // handle the password crypto
-    user_doc.salt = CouchDB.newUuids(1)[0];
-    user_doc.password_sha = hex_sha1(new_password + user_doc.salt);
+    CouchDB.last_req = CouchDB.request("POST", "/_password", {
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(new_password)
+    });
+    var resp = JSON.parse(CouchDB.last_req.responseText);
+    for (var key in resp) {
+      user_doc[key] = resp[key];
+    }
   }
   user_doc.type = "user";
   if (!user_doc.roles) {

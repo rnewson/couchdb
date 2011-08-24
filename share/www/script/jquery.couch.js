@@ -195,16 +195,24 @@
      * @param {String} new_password New Password
      */
     prepareUserDoc: function(user_doc, new_password) {
-      if (typeof hex_sha1 == "undefined") {
-        alert("creating a user doc requires sha1.js to be loaded in the page");
-        return;
-      }
       var user_prefix = "org.couchdb.user:";
       user_doc._id = user_doc._id || user_prefix + user_doc.name;
       if (new_password) {
-        // handle the password crypto
-        user_doc.salt = $.couch.newUUID();
-        user_doc.password_sha = hex_sha1(new_password + user_doc.salt);
+        ajax({
+          type: "POST",
+          url: this.urlPrefix + "/_password",
+          data: JSON.stringify(new_password),
+          contentType: "application/json",
+          async: false
+        }, {
+          success: function(resp) {
+            for (var key in resp) {
+              user_doc[key] = resp[key];
+            }
+          }
+        },
+        "Failed to hash password."
+        );
       }
       user_doc.type = "user";
       if (!user_doc.roles) {
