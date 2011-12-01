@@ -462,13 +462,13 @@ find_header(Fd, Block) ->
 
 load_header(Fd, Block) ->
     {ok, <<1, HeaderLen:32/integer, RestBlock/binary>>} =
-        file:pread(Fd, Block * ?SIZE_BLOCK, ?SIZE_BLOCK),
+        pread_exactly(Fd, Block * ?SIZE_BLOCK, ?SIZE_BLOCK),
     TotalBytes = calculate_total_read_len(5, HeaderLen),
     case TotalBytes > byte_size(RestBlock) of
     false ->
         <<RawBin:TotalBytes/binary, _/binary>> = RestBlock;
     true ->
-        {ok, Missing} = file:pread(
+        {ok, Missing} = pread_exactly(
             Fd, (Block * ?SIZE_BLOCK) + 5 + byte_size(RestBlock),
             TotalBytes - byte_size(RestBlock)),
         RawBin = <<RestBlock/binary, Missing/binary>>
@@ -494,7 +494,7 @@ read_raw_iolist_int(Fd, {Pos, _Size}, Len) -> % 0110 UPGRADE CODE
 read_raw_iolist_int(#file{fd = Fd}, Pos, Len) ->
     BlockOffset = Pos rem ?SIZE_BLOCK,
     TotalBytes = calculate_total_read_len(BlockOffset, Len),
-    {ok, <<RawBin:TotalBytes/binary>>} = file:pread(Fd, Pos, TotalBytes),
+    {ok, <<RawBin:TotalBytes/binary>>} = pread_exactly(Fd, Pos, TotalBytes),
     {remove_block_prefixes(BlockOffset, RawBin), Pos + TotalBytes}.
 
 -spec extract_md5(iolist()) -> {binary(), iolist()}.
@@ -564,6 +564,19 @@ split_iolist([Sublist| Rest], SplitAt, BeginAcc) when is_list(Sublist) ->
 split_iolist([Byte | Rest], SplitAt, BeginAcc) when is_integer(Byte) ->
     split_iolist(Rest, SplitAt - 1, [Byte | BeginAcc]).
 
+-spec pread_exactly(file:io_device(), file:location(), pos_integer()) ->
+                   {ok, string()|binary()} | eof | {error, term()}.
+pread_exactly(IoDevice, Location, Number) ->
+    case file:pread(IoDevice, Location, Number) of
+        {ok, <<_:Number/binary>>=Data} ->
+            {ok, Data};
+        {ok, Data} ->
+            twig:log(emerg, "pread for ~p at position ~B for ~B bytes but only read ~B bytes",
+                     [IoDevice, Location, Number, iolist_size(Data)]),
+            eof;
+        Else ->
+            Else
+    end.
 
 is_idle() ->
     case process_info(self(), monitored_by) of
