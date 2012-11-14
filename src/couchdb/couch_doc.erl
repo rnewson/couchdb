@@ -445,7 +445,15 @@ fold_streamed_data(RcvFun, LenLeft, Fun, Acc) when LenLeft > 0->
     fold_streamed_data(RcvFun, LenLeft - size(Bin), Fun, ResultAcc).
 
 len_doc_to_multi_part_stream(Boundary, JsonBytes, Atts, SendEncodedAtts) ->
-    AttsSize = lists:foldl(fun(#att{data=Data} = Att, AccAttsSize) ->
+    AttsSize = lists:foldl(fun(Att, AccAttsSize) ->
+            #att{
+                data=Data,
+                name=Name,
+                att_len=AttLen,
+                disk_len=DiskLen,
+                type=Type,
+                encoding=Encoding
+            } = Att,
             case Data of
             stub ->
                 AccAttsSize;
@@ -454,12 +462,29 @@ len_doc_to_multi_part_stream(Boundary, JsonBytes, Atts, SendEncodedAtts) ->
                 4 + % "\r\n\r\n"
                 case SendEncodedAtts of
                 true ->
-                    Att#att.att_len;
+                    % header
+                    length(integer_to_list(AttLen)) +
+                    AttLen;
                 _ ->
-                    Att#att.disk_len
+                    % header
+                    length(integer_to_list(DiskLen)) +
+                    DiskLen
                 end +
                 4 + % "\r\n--"
-                size(Boundary)
+                size(Boundary) +
+
+                % attachment headers
+                % (the length of the Content-Length has already been set)
+                case Encoding of
+                identity -> 4;
+                _ -> size(list_to_binary(atom_to_list(Encoding)))
+                end +
+                size(Name) +
+                size(Type) +
+                23 + % "\r\nContent-Disposition: "
+                16 + % "\r\nContent-Type: "
+                18 + % "\r\nContent-Length: "
+                29   % "\r\nContent-Transfer-Encoding: "
             end
         end, 0, Atts),
     if AttsSize == 0 ->
@@ -496,6 +521,25 @@ atts_to_mp([#att{data=stub} | RestAtts], Boundary, WriteFun,
     atts_to_mp(RestAtts, Boundary, WriteFun, SendEncodedAtts);
 atts_to_mp([Att | RestAtts], Boundary, WriteFun,
         SendEncodedAtts)  ->
+    #att{
+        name=Name,
+        att_len=Length,
+        type=Type,
+        encoding=Encoding
+    } = Att,
+
+    % write headers
+    LengthBin = list_to_binary(integer_to_list(Length)),
+    TransferEncoding = case Encoding of
+    identity -> <<"7bit">>; % eh?
+    _ -> list_to_binary(atom_to_list(Encoding)) % send encoded
+    end,
+    WriteFun(<<"\r\nContent-Disposition: ", Name/binary>>),
+    WriteFun(<<"\r\nContent-Type: ", Type/binary>>),
+    WriteFun(<<"\r\nContent-Length: ", LengthBin/binary>>),
+    WriteFun(<<"\r\nContent-Transfer-Encoding: ", TransferEncoding/binary>>),
+
+    % write data
     WriteFun(<<"\r\n\r\n">>),
     AttFun = case SendEncodedAtts of
     false ->

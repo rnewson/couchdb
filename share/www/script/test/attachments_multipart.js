@@ -18,7 +18,7 @@ couchTests.attachments_multipart= function(debug) {
   
   // mime multipart
             
-  xhr = CouchDB.request("PUT", "/test_suite_db/multipart", {
+  var xhr = CouchDB.request("PUT", "/test_suite_db/multipart", {
     headers: {"Content-Type": "multipart/related;boundary=\"abc123\""},
     body:
       "--abc123\r\n" +
@@ -177,14 +177,27 @@ couchTests.attachments_multipart= function(debug) {
   // parse out the multipart
   
   var sections = parseMultipart(xhr);
-  
+
   T(sections.length == 3);
-  
-  // The first section is the json doc. Check it's content-type. It contains
-  // the metadata for all the following attachments
-  
-  T(sections[0].headers['content-type'] == "application/json");
-  
+  // The first section is the json doc. Check it's content-type.
+  // Each part carries their own meta data.
+  TEquals("application/json", sections[0].headers['content-type'],
+    "Content-Type should be application/json for section[0]");
+  TEquals("application/test", sections[1].headers['Content-Type'],
+    "Content-Type should be application/test for section[1]");
+  TEquals("application/test", sections[2].headers['Content-Type'],
+    "Content-Type should be application/test for section[2]");
+
+  TEquals("21", sections[1].headers['Content-Length'],
+    "Content-Length should be 21 section[1]");
+  TEquals("18", sections[2].headers['Content-Length'],
+    "Content-Length should be 18 section[2]");
+
+  TEquals("foo.txt", sections[1].headers['Content-Disposition'],
+    "Content-ID should be foo.txt section[1]");
+  TEquals("bar.txt", sections[2].headers['Content-Disposition'],
+    "Content-ID should be bar.txt section[2]");
+
   var doc = JSON.parse(sections[0].body);
   
   T(doc._attachments['foo.txt'].follows == true);
