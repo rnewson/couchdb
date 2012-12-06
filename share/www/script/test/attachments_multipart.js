@@ -137,6 +137,7 @@ couchTests.attachments_multipart= function(debug) {
   }
   
   function parseMultipart(xhr) {
+    console.log(xhr);
     var boundary = getBoundary(xhr);
     var mimetext = CouchDB.xhrbody(xhr);
     // strip off leading boundary
@@ -163,6 +164,7 @@ couchTests.attachments_multipart= function(debug) {
         headers[tmp[0]] = tmp[1]; 
       }
       sections[i] = {"headers":headers, "body":body};
+      console.log(sections[i]);
     }
     
     return sections;
@@ -193,10 +195,10 @@ couchTests.attachments_multipart= function(debug) {
   TEquals("18", sections[2].headers['Content-Length'],
     "Content-Length should be 18 section[2]");
 
-  TEquals("foo.txt", sections[1].headers['Content-Disposition'],
-    "Content-ID should be foo.txt section[1]");
-  TEquals("bar.txt", sections[2].headers['Content-Disposition'],
-    "Content-ID should be bar.txt section[2]");
+  TEquals('attachment; filename="foo.txt"', sections[1].headers['Content-Disposition'],
+    "Content-Disposition should be foo.txt section[1]");
+  TEquals('attachment; filename="bar.txt"', sections[2].headers['Content-Disposition'],
+    "Content-Disposition should be bar.txt section[2]");
 
   var doc = JSON.parse(sections[0].body);
   
@@ -204,7 +206,7 @@ couchTests.attachments_multipart= function(debug) {
   T(doc._attachments['bar.txt'].follows == true);
   
   T(sections[1].body == "this is 21 chars long");
-  T(sections[2].body == "this is 18 chars l");
+  TEquals("this is 18 chars l", sections[2].body, "should be 18 chars long");
   
   // now get attachments incrementally (only the attachments changes since
   // a certain rev).
@@ -223,7 +225,7 @@ couchTests.attachments_multipart= function(debug) {
   T(doc._attachments['foo.txt'].stub == true);
   T(doc._attachments['bar.txt'].follows == true);
   
-  T(sections[1].body == "this is 18 chars l");
+  TEquals("this is 18 chars l", sections[1].body, "should be 18 chars long 2");
 
   // try the atts_since parameter together with the open_revs parameter
   xhr = CouchDB.request(
@@ -269,8 +271,7 @@ couchTests.attachments_multipart= function(debug) {
   T(doc._attachments['bar.txt'].follows == true);
   
   T(sections[1].body == "this is 21 chars long");
-  T(sections[2].body == "this is 18 chars l");
-  
+  TEquals("this is 18 chars l", sections[2].body, "should be 18 chars long 3");
   // try it with a rev that doesn't exist, and one that does
   
   xhr = CouchDB.request("GET", "/test_suite_db/multipart?atts_since=[\"1-2897589\",\"" + firstrev + "\"]",
@@ -287,8 +288,7 @@ couchTests.attachments_multipart= function(debug) {
   T(doc._attachments['foo.txt'].stub == true);
   T(doc._attachments['bar.txt'].follows == true);
   
-  T(sections[1].body == "this is 18 chars l");
-
+  TEquals("this is 18 chars l", sections[1].body, "should be 18 chars long 4");
 
   // check that with the document multipart/mixed API it's possible to receive
   // attachments in compressed form (if they're stored in compressed form)

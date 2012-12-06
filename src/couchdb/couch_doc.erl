@@ -475,16 +475,13 @@ len_doc_to_multi_part_stream(Boundary, JsonBytes, Atts, SendEncodedAtts) ->
 
                 % attachment headers
                 % (the length of the Content-Length has already been set)
-                case Encoding of
-                identity -> 4;
-                _ -> size(list_to_binary(atom_to_list(Encoding)))
-                end +
                 size(Name) +
                 size(Type) +
-                23 + % "\r\nContent-Disposition: "
-                16 + % "\r\nContent-Type: "
-                18 + % "\r\nContent-Length: "
-                29   % "\r\nContent-Transfer-Encoding: "
+                length(atom_to_list(Encoding)) +
+                46 + % length("\r\nContent-Disposition: attachment; filename=\"\"") +
+                16 + % length("\r\nContent-Type: ") +
+                18 + % length("\r\nContent-Length: ") +
+                20   % length("\r\nContent-Encoding: ")
             end
         end, 0, Atts),
     if AttsSize == 0 ->
@@ -507,7 +504,7 @@ doc_to_multi_part_stream(Boundary, JsonBytes, Atts, WriteFun,
     case lists:any(fun(#att{data=Data})-> Data /= stub end, Atts) of
     true ->
         WriteFun([<<"--", Boundary/binary,
-                "\r\ncontent-type: application/json\r\n\r\n">>,
+                "\r\nContent-Type: application/json\r\n\r\n">>,
                 JsonBytes, <<"\r\n--", Boundary/binary>>]),
         atts_to_mp(Atts, Boundary, WriteFun, SendEncodedAtts);
     false ->
@@ -529,15 +526,12 @@ atts_to_mp([Att | RestAtts], Boundary, WriteFun,
     } = Att,
 
     % write headers
+    EncodingBin = atom_to_binary(Encoding, latin1),
     LengthBin = list_to_binary(integer_to_list(Length)),
-    TransferEncoding = case Encoding of
-    identity -> <<"7bit">>; % eh?
-    _ -> list_to_binary(atom_to_list(Encoding)) % send encoded
-    end,
-    WriteFun(<<"\r\nContent-Disposition: ", Name/binary>>),
+    WriteFun(<<"\r\nContent-Disposition: attachment; filename=\"", Name/binary, "\"">>),
     WriteFun(<<"\r\nContent-Type: ", Type/binary>>),
     WriteFun(<<"\r\nContent-Length: ", LengthBin/binary>>),
-    WriteFun(<<"\r\nContent-Transfer-Encoding: ", TransferEncoding/binary>>),
+    WriteFun(<<"\r\nContent-Encoding: ", EncodingBin/binary>>),
 
     % write data
     WriteFun(<<"\r\n\r\n">>),
