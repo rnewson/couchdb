@@ -477,11 +477,15 @@ len_doc_to_multi_part_stream(Boundary, JsonBytes, Atts, SendEncodedAtts) ->
                 % (the length of the Content-Length has already been set)
                 size(Name) +
                 size(Type) +
-                length(atom_to_list(Encoding)) +
                 46 + % length("\r\nContent-Disposition: attachment; filename=\"\"") +
                 16 + % length("\r\nContent-Type: ") +
                 18 + % length("\r\nContent-Length: ") +
-                20   % length("\r\nContent-Encoding: ")
+                case Encoding of
+                identity ->
+                    0;
+                 _ ->
+                    length(atom_to_list(Encoding)) + 20 % length("\r\nContent-Encoding: ")
+                end
             end
         end, 0, Atts),
     if AttsSize == 0 ->
@@ -526,12 +530,17 @@ atts_to_mp([Att | RestAtts], Boundary, WriteFun,
     } = Att,
 
     % write headers
-    EncodingBin = atom_to_binary(Encoding, latin1),
     LengthBin = list_to_binary(integer_to_list(Length)),
     WriteFun(<<"\r\nContent-Disposition: attachment; filename=\"", Name/binary, "\"">>),
     WriteFun(<<"\r\nContent-Type: ", Type/binary>>),
     WriteFun(<<"\r\nContent-Length: ", LengthBin/binary>>),
-    WriteFun(<<"\r\nContent-Encoding: ", EncodingBin/binary>>),
+    case Encoding of
+    identity ->
+        ok;
+    _ ->
+        EncodingBin = atom_to_binary(Encoding, latin1),
+        WriteFun(<<"\r\nContent-Encoding: ", EncodingBin/binary>>)
+    end,
 
     % write data
     WriteFun(<<"\r\n\r\n">>),
