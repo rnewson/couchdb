@@ -102,9 +102,29 @@ ddoc_to_mrst(DbName, #doc{id=Id, body={Fields}}) ->
         language=Language,
         design_opts=DesignOpts
     },
-    SigInfo = {Views, Language, DesignOpts, couch_index_util:sort_lib(Lib)},
-    {ok, IdxState#mrst{sig=couch_util:md5(term_to_binary(SigInfo))}}.
+    {ok, IdxState#mrst{sig=disk_sig(IdxState)}}.
 
+disk_sig(IdxState) ->
+    Term = disk_sig1(IdxState),
+    couch_util:md5(term_to_binary(Term)).
+
+disk_sig1(#mrst{views=Views, language=Language, design_opts=DesignOpts, lib={[]}}) ->
+    ViewInfo =[view_info(V) || V <- Views],
+    {ViewInfo, Language, DesignOpts};
+disk_sig1(#mrst{views=Views, language=Language, design_opts=DesignOpts, lib=Lib}) ->
+    ViewInfo =[view_info(V) || V <- Views],
+    {ViewInfo, Language, DesignOpts, couch_index_util:sort_lib(Lib)}.
+
+view_info(View) ->
+    {
+      view,
+      View#mrview.id_num,
+      View#mrview.map_names,
+      View#mrview.def,
+      View#mrview.btree,
+      View#mrview.reduce_funs,
+      View#mrview.options
+    }.
 
 set_view_type(_Args, _ViewName, []) ->
     throw({not_found, missing_named_view});
