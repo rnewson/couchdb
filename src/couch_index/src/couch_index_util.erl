@@ -25,9 +25,9 @@ root_dir() ->
     end.
 
 
-index_dir(Module, DbName) when is_binary(DbName) ->
+index_dir(_Module, DbName) when is_binary(DbName) ->
     DbDir = "." ++ binary_to_list(DbName) ++ "_design",
-    filename:join([root_dir(), DbDir, Module]);
+    filename:join([root_dir(), DbDir]);
 index_dir(Module, #db{}=Db) ->
     index_dir(Module, couch_db:name(Db)).
 
