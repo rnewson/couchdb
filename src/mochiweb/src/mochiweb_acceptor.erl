@@ -6,7 +6,7 @@
 -module(mochiweb_acceptor).
 -author('bob@mochimedia.com').
 
--include("internal.hrl").
+-include_lib("mochiweb/include/internal.hrl").
 
 -export([start_link/3, init/3]).
 
