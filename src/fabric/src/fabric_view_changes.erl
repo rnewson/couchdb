@@ -271,7 +271,6 @@ handle_message({no_pass, Props}, {Worker, From}, #collector{limit=0} = State)
 
 handle_message(#change{} = Row, {Worker, From}, St) ->
     Change = {change, [
-        {seq, Row#change.key},
         {id, Row#change.id},
         {changes, Row#change.value},
         {deleted, Row#change.deleted},
@@ -290,14 +289,7 @@ handle_message({change, Props}, {Worker, From}, St) ->
     true = fabric_dict:is_key(Worker, S0),
     S1 = fabric_dict:store(Worker, couch_util:get_value(seq, Props), S0),
     O1 = fabric_dict:store(Worker, couch_util:get_value(pending, Props), O0),
-    % Temporary hack for FB 23637
-    Interval = erlang:get(changes_seq_interval),
-    if (Interval == undefined) orelse (Limit rem Interval == 0) ->
-        Props2 = lists:keyreplace(seq, 1, Props, {seq, pack_seqs(S1)});
-    true ->
-        Props2 = lists:keyreplace(seq, 1, Props, {seq, null})
-    end,
-    {Go, Acc} = Callback(changes_row(Props2), AccIn),
+    {Go, Acc} = Callback(changes_row(Props), AccIn),
     rexi:stream_ack(From),
     {Go, St#collector{counters=S1, offset=O1, limit=Limit-1, user_acc=Acc}};
 
@@ -483,7 +475,7 @@ changes_row(Props0) ->
         _ ->
             lists:keydelete(deleted, 1, Props0)
     end,
-    Allowed = [seq, id, changes, deleted, doc, error],
+    Allowed = [id, changes, deleted, doc, error],
     Props2 = lists:filter(fun({K,_V}) -> lists:member(K, Allowed) end, Props1),
     {change, {Props2}}.
 

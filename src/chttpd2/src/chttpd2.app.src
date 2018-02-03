@@ -1,0 +1,13 @@
+{application, chttpd2, [
+    {description, "Cowboy version of chttpd"},
+    {vsn, "0.1.0"},
+    {registered, [
+    ]},
+    {applications, [
+        kernel,
+        stdlib,
+        config,
+        cowboy
+    ]},
+    {mod, {chttpd2_app,[]}}
+]}.
